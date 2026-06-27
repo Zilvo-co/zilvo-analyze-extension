@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zilvo Analyze</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
+    <header class="header">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 36 36" fill="none">
+          <rect width="36" height="36" rx="8" fill="#6c63ff"/>
+          <path d="M9 11h18M9 18h12M9 25h8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="27" cy="25" r="5" fill="#f59e0b"/>
+          <path d="M24.5 25l1.5 1.5 3-3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="logo-text">
+          <h1>Zilvo Analyze</h1>
+          <p>Company Intelligence</p>
+        </div>
+      </div>
+      <div id="user-badge" class="user-badge hidden">
+        <span id="user-credits" class="credits-badge">— cr</span>
+        <button id="refresh-btn" class="icon-btn" title="Refresh detection">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+            <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Tab bar ──────────────────────────────────────────────────────────── -->
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="linkedin">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+          <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248S2.4 3.226 2.4 3.934c0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016l.016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"/>
+        </svg>
+        LinkedIn
+      </button>
+      <button class="tab-btn" data-tab="website">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+          <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
+        </svg>
+        Website
+      </button>
+      <button class="tab-btn" data-tab="manual">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+          <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+        </svg>
+        Manual
+      </button>
+    </nav>
+
+    <!-- ── Auth overlay (shown when not logged in, tabs 1 & 2) ──────────────── -->
+    <div id="auth-overlay" class="main hidden">
+      <div class="card">
+        <div class="auth-header">
+          <svg viewBox="0 0 36 36" fill="none" width="32" height="32">
+            <rect width="36" height="36" rx="8" fill="#6c63ff"/>
+            <path d="M9 11h18M9 18h12M9 25h8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <p class="auth-title">Sign in to Zilvo</p>
+            <p class="hint">Analyze companies with AI</p>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:12px;line-height:1.6">
+          Click below to open Zilvo. After you sign in, this panel will update automatically.
+        </p>
+        <button id="login-btn" class="btn btn-amber" style="margin-top:14px">
+          Open Zilvo &amp; Sign In →
+        </button>
+        <p class="hint" style="text-align:center; margin-top:10px">
+          No account? <a href="https://zilvo.co/signup" target="_blank" rel="noopener" class="info-link">Sign up free →</a>
+        </p>
+      </div>
+    </div>
+
+    <!-- ══════════════════ TAB 1 — LINKEDIN COMPANY ═══════════════════════════ -->
+    <div id="tab-linkedin" class="tab-content">
+      <div class="main">
+
+        <!-- Detection card -->
+        <div class="card" id="li-detection-card">
+          <div id="li-detect-loading" class="detect-row">
+            <span class="spinner" style="display:inline-block;border-top-color:var(--color-muted)" aria-hidden="true"></span>
+            <span>Detecting page…</span>
+          </div>
+
+          <!-- LinkedIn page found -->
+          <div id="li-detect-found" class="hidden">
+            <div class="detect-badge detect-badge-li">
+              <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11">
+                <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248S2.4 3.226 2.4 3.934c0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016l.016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"/>
+              </svg>
+              LinkedIn Company Page Detected
+            </div>
+            <p id="li-detect-url" class="detect-url" style="margin-top:5px"></p>
+
+            <!-- Auto-scrape status row -->
+            <div id="li-auto-status" class="auto-status-row hidden">
+              <span id="li-auto-dot" class="auto-dot"></span>
+              <span id="li-auto-label"></span>
+            </div>
+          </div>
+
+          <!-- Not on a LinkedIn page -->
+          <div id="li-detect-none" class="hidden">
+            <div class="detect-badge detect-badge-none">Not on a LinkedIn company page</div>
+            <p class="detect-sub" style="margin-top:6px">Navigate to a LinkedIn company page, or enter a URL below.</p>
+          </div>
+
+          <button id="li-analyze-btn" class="btn btn-amber hidden">
+            <span id="li-analyze-text">Analyze Company</span>
+            <span id="li-analyze-spinner" class="spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <!-- Manual LinkedIn URL -->
+        <div class="card">
+          <button class="collapsible-btn" id="li-manual-toggle" aria-expanded="false">
+            <span class="collapsible-title">
+              <svg viewBox="0 0 16 16" fill="currentColor" class="section-icon"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
+              Analyze a different LinkedIn URL
+            </span>
+            <svg id="li-manual-chevron" class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4"/></svg>
+          </button>
+          <div id="li-manual-body" class="collapsible-body hidden">
+            <label class="field-label" for="li-manual-url">LinkedIn Company URL</label>
+            <div class="input-row">
+              <input type="url" id="li-manual-url" class="input" placeholder="https://linkedin.com/company/hubspot/" autocomplete="off" spellcheck="false"/>
+              <button id="li-manual-clear" class="icon-btn" title="Clear">
+                <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"/></svg>
+              </button>
+            </div>
+            <p id="li-manual-error" class="field-error" aria-live="polite"></p>
+            <button id="li-manual-btn" class="btn btn-secondary">Analyze URL</button>
+          </div>
+        </div>
+
+        <!-- Result card -->
+        <div id="li-result-card" class="card hidden">
+          <p id="li-result-msg" class="result-msg"></p>
+          <a href="https://zilvo.co/tools/company-intelligence/overview" target="_blank" rel="noopener"
+             class="btn btn-secondary" style="text-decoration:none;margin-top:8px;display:flex">
+            Open Zilvo Dashboard →
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══════════════════ TAB 2 — WEBSITE ════════════════════════════════════ -->
+    <div id="tab-website" class="tab-content hidden">
+      <div class="main">
+
+        <!-- Detection card -->
+        <div class="card">
+          <div id="web-detect-loading" class="detect-row">
+            <span class="spinner" style="display:inline-block;border-top-color:var(--color-muted)" aria-hidden="true"></span>
+            <span>Detecting page…</span>
+          </div>
+
+          <!-- Website found -->
+          <div id="web-detect-found" class="hidden">
+            <div class="detect-badge detect-badge-web">
+              <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11">
+                <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
+              </svg>
+              Website Detected
+            </div>
+            <p id="web-detect-url" class="detect-url" style="margin-top:5px"></p>
+          </div>
+
+          <!-- On LinkedIn, not a website -->
+          <div id="web-detect-is-linkedin" class="hidden">
+            <div class="detect-badge detect-badge-none">You're on LinkedIn</div>
+            <p class="detect-sub" style="margin-top:6px">Switch to the <strong style="color:var(--color-text)">LinkedIn</strong> tab to analyze this company, or enter a website URL below.</p>
+          </div>
+
+          <!-- Unknown / restricted page -->
+          <div id="web-detect-none" class="hidden">
+            <div class="detect-badge detect-badge-none">No website detected</div>
+            <p class="detect-sub" style="margin-top:6px">Navigate to a company website, or enter a URL below.</p>
+          </div>
+
+          <button id="web-analyze-btn" class="btn btn-amber hidden">
+            <span id="web-analyze-text">Analyze Website</span>
+            <span id="web-analyze-spinner" class="spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <!-- Manual Website URL -->
+        <div class="card">
+          <button class="collapsible-btn" id="web-manual-toggle" aria-expanded="false">
+            <span class="collapsible-title">
+              <svg viewBox="0 0 16 16" fill="currentColor" class="section-icon"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
+              Analyze a different website
+            </span>
+            <svg id="web-manual-chevron" class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4"/></svg>
+          </button>
+          <div id="web-manual-body" class="collapsible-body hidden">
+            <label class="field-label" for="web-manual-url">Website URL</label>
+            <div class="input-row">
+              <input type="url" id="web-manual-url" class="input" placeholder="https://example.com" autocomplete="off" spellcheck="false"/>
+              <button id="web-manual-clear" class="icon-btn" title="Clear">
+                <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"/></svg>
+              </button>
+            </div>
+            <p id="web-manual-error" class="field-error" aria-live="polite"></p>
+            <button id="web-manual-btn" class="btn btn-secondary">Analyze URL</button>
+          </div>
+        </div>
+
+        <!-- Result card -->
+        <div id="web-result-card" class="card hidden">
+          <p id="web-result-msg" class="result-msg"></p>
+          <a href="https://zilvo.co/tools/company-intelligence/overview" target="_blank" rel="noopener"
+             class="btn btn-secondary" style="text-decoration:none;margin-top:8px;display:flex">
+            Open Zilvo Dashboard →
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══════════════════ TAB 3 — MANUAL / BULK CSV ═══════════════════════════ -->
+    <div id="tab-manual" class="tab-content hidden">
+      <div class="main">
+
+        <!-- LinkedIn CSV upload -->
+        <div class="card">
+          <div class="section-header">
+            <span class="field-label" style="margin-bottom:0">LinkedIn URLs</span>
+            <button id="li-csv-clear-btn" class="pill-btn pill-danger hidden">Clear</button>
+          </div>
+          <p class="hint" style="margin-top:3px;margin-bottom:8px">CSV with one LinkedIn company URL per row &mdash; <button id="li-csv-example-btn" class="link-btn">Download example</button></p>
+          <label for="li-csv-input" class="csv-dropzone" id="li-csv-zone">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="18" height="18">
+              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+            </svg>
+            <span id="li-csv-zone-label">Click to upload CSV</span>
+            <input type="file" id="li-csv-input" accept=".csv,text/csv" class="hidden"/>
+          </label>
+          <div id="li-csv-preview" class="hidden">
+            <p id="li-csv-count" class="bulk-count"></p>
+            <ul id="li-csv-list" class="bulk-url-list"></ul>
+          </div>
+          <p id="li-csv-error" class="field-error" aria-live="polite"></p>
+        </div>
+
+        <!-- Website CSV upload -->
+        <div class="card">
+          <div class="section-header">
+            <span class="field-label" style="margin-bottom:0">Website URLs</span>
+            <button id="web-csv-clear-btn" class="pill-btn pill-danger hidden">Clear</button>
+          </div>
+          <p class="hint" style="margin-top:3px;margin-bottom:8px">CSV with one website URL per row &mdash; <button id="web-csv-example-btn" class="link-btn">Download example</button></p>
+          <label for="web-csv-input" class="csv-dropzone" id="web-csv-zone">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="18" height="18">
+              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+            </svg>
+            <span id="web-csv-zone-label">Click to upload CSV</span>
+            <input type="file" id="web-csv-input" accept=".csv,text/csv" class="hidden"/>
+          </label>
+          <div id="web-csv-preview" class="hidden">
+            <p id="web-csv-count" class="bulk-count"></p>
+            <ul id="web-csv-list" class="bulk-url-list"></ul>
+          </div>
+          <p id="web-csv-error" class="field-error" aria-live="polite"></p>
+        </div>
+
+        <button id="bulk-run-btn" class="btn btn-amber hidden">
+          <span id="bulk-run-text">Analyze All</span>
+          <span id="bulk-run-spinner" class="spinner" aria-hidden="true"></span>
+        </button>
+
+        <!-- Bulk progress / results -->
+        <div id="bulk-progress-card" class="card hidden">
+          <div class="section-label">Progress</div>
+          <div class="bulk-progress">
+            <div class="progress-track">
+              <div class="progress-fill" id="bulk-progress-fill"></div>
+            </div>
+            <p id="bulk-progress-label" class="hint" style="margin-top:4px"></p>
+          </div>
+          <ul id="bulk-results-list" class="bulk-results"></ul>
+          <a href="https://zilvo.co/tools/company-intelligence/overview" target="_blank" rel="noopener"
+             id="bulk-dashboard-link"
+             class="btn btn-secondary hidden" style="text-decoration:none;margin-top:8px;display:flex">
+            Open Zilvo Dashboard →
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
