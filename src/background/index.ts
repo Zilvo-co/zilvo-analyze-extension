@@ -150,6 +150,7 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
       linkedinEmployeeCount: msg.linkedinEmployeeCount  || undefined,
       linkedinFollowerCount: msg.linkedinFollowerCount  || undefined,
       pageContent:           msg.pageContent            || undefined,
+      userInputField:        msg.userInputField         || undefined,
     }),
   });
 

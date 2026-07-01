@@ -212,10 +212,10 @@ async function handleLiAnalyze(overrideUrl) {
       $('li-manual-error').textContent = 'Please enter a valid LinkedIn company URL.';
       return;
     }
-    message = { action: 'ANALYZE_COMPANY_URL', linkedinUrl: overrideUrl, token: auth.token };
+    message = { action: 'ANALYZE_COMPANY_URL', linkedinUrl: overrideUrl, token: auth.token, userInputField: overrideUrl };
   } else {
     if (!_detection || _detection.type !== 'LINKEDIN_COMPANY') return;
-    message = { action: 'ANALYZE_COMPANY', tabId: _detection.tabId, token: auth.token };
+    message = { action: 'ANALYZE_COMPANY', tabId: _detection.tabId, token: auth.token, userInputField: _detection.linkedinUrl };
   }
 
   setLiAnalyzeState(true);
@@ -305,17 +305,20 @@ async function handleWebAnalyze(overrideUrl) {
 
   let websiteUrl, linkedinUrl;
 
+  let userInputField;
   if (overrideUrl) {
     if (!overrideUrl.startsWith('http')) {
       $('web-manual-error').textContent = 'Enter a valid URL starting with https://';
       return;
     }
-    websiteUrl  = overrideUrl;
-    linkedinUrl = null;
+    websiteUrl     = overrideUrl;
+    linkedinUrl    = null;
+    userInputField = overrideUrl;
   } else {
     if (!_detection || (_detection.type !== 'WEBSITE' && _detection.type !== 'WEBSITE_WITH_LINKEDIN')) return;
-    websiteUrl  = _detection.websiteUrl || _detection.currentUrl;
-    linkedinUrl = _detection.linkedinUrl || null;
+    websiteUrl     = _detection.websiteUrl || _detection.currentUrl;
+    linkedinUrl    = _detection.linkedinUrl || null;
+    userInputField = _detection.currentUrl || websiteUrl;
   }
 
   setWebAnalyzeState(true);
@@ -325,6 +328,7 @@ async function handleWebAnalyze(overrideUrl) {
     linkedinUrl,
     token:       auth.token,
     tabId:       overrideUrl ? null : (_detection?.tabId ?? null),
+    userInputField,
   });
   setWebAnalyzeState(false);
 
@@ -599,17 +603,19 @@ async function handleBulkAnalyze() {
     try {
       if (job.type === 'linkedin') {
         result = await chrome.runtime.sendMessage({
-          action:      'ANALYZE_COMPANY_URL',
-          linkedinUrl: job.url,
-          token:       auth.token,
+          action:        'ANALYZE_COMPANY_URL',
+          linkedinUrl:   job.url,
+          token:         auth.token,
+          userInputField: job.url,
         });
       } else {
         result = await chrome.runtime.sendMessage({
-          action:      'ANALYZE_WEBSITE',
-          websiteUrl:  job.url,
-          linkedinUrl: null,
-          token:       auth.token,
-          tabId:       null,
+          action:        'ANALYZE_WEBSITE',
+          websiteUrl:    job.url,
+          linkedinUrl:   null,
+          token:         auth.token,
+          tabId:         null,
+          userInputField: job.url,
         });
       }
     } catch (err) {

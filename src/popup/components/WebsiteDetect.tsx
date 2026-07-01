@@ -74,7 +74,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
       }
     }
 
-    chrome.runtime.sendMessage({ type: 'ANALYZE_FOR_CI', websiteUrl: fullUrl, pageContent });
+    chrome.runtime.sendMessage({ type: 'ANALYZE_FOR_CI', websiteUrl: fullUrl, pageContent, userInputField: fullUrl });
   }, [tabId]);
 
   const authStrip = (

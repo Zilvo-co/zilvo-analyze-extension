@@ -140,6 +140,7 @@ export interface AnalyzeForCIMessage {
   linkedinEmployeeCount?: string;
   linkedinFollowerCount?: string;
   pageContent?: string;
+  userInputField?: string;
 }
 
 export interface CIProgressMessage {

@@ -46,8 +46,9 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
           if (nextIdx < next.length) {
             currentIdx.current = nextIdx;
             chrome.runtime.sendMessage({
-              type:        'ANALYZE_FOR_CI',
-              linkedinUrl: next[nextIdx].url,
+              type:           'ANALYZE_FOR_CI',
+              linkedinUrl:    next[nextIdx].url,
+              userInputField: next[nextIdx].url,
             });
             return next.map((it, i) =>
               i === nextIdx ? { ...it, status: 'processing' as const, message: 'Analyzing…' } : it
@@ -66,8 +67,9 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
           if (nextIdx < next.length) {
             currentIdx.current = nextIdx;
             chrome.runtime.sendMessage({
-              type:        'ANALYZE_FOR_CI',
-              linkedinUrl: next[nextIdx].url,
+              type:           'ANALYZE_FOR_CI',
+              linkedinUrl:    next[nextIdx].url,
+              userInputField: next[nextIdx].url,
             });
             return next.map((it, i) =>
               i === nextIdx ? { ...it, status: 'processing' as const, message: 'Analyzing…' } : it
@@ -103,7 +105,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
     currentIdx.current = 0;
     setItems(newItems);
     setMode('processing');
-    chrome.runtime.sendMessage({ type: 'ANALYZE_FOR_CI', linkedinUrl: unique[0] });
+    chrome.runtime.sendMessage({ type: 'ANALYZE_FOR_CI', linkedinUrl: unique[0], userInputField: unique[0] });
   };
 
   const handleReset = () => {

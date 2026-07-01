@@ -76,6 +76,7 @@ export default function CIAnalyze({ onLogout, userName }: Props) {
       linkedinIndustry:     liData.industry       || undefined,
       linkedinEmployeeCount: liData.employeeCount || undefined,
       linkedinFollowerCount: liData.followerCount || undefined,
+      userInputField:       liData.linkedinUrl,
     });
   }, []);
 
@@ -87,9 +88,10 @@ export default function CIAnalyze({ onLogout, userName }: Props) {
 
     setState({ status: 'loading', step: 'analyzing', message: 'Analyzing company…' });
     chrome.runtime.sendMessage({
-      type:        'ANALYZE_FOR_CI',
-      linkedinUrl: isLi    ? trimmed  : undefined,
-      websiteUrl:  !isLi   ? fullUrl  : undefined,
+      type:           'ANALYZE_FOR_CI',
+      linkedinUrl:    isLi    ? trimmed  : undefined,
+      websiteUrl:     !isLi   ? fullUrl  : undefined,
+      userInputField: trimmed,
     });
   }, []);
 

@@ -74,6 +74,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
       linkedinIndustry:      liData.industry        || undefined,
       linkedinEmployeeCount: liData.employeeCount   || undefined,
       linkedinFollowerCount: liData.followerCount   || undefined,
+      userInputField:        liData.linkedinUrl,
     });
   }, []);
 
