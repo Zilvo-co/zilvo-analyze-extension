@@ -39,7 +39,7 @@
 
   "content_scripts": [
     {
-      "matches": ["https://zilvo.co/*", "http://localhost:3000/*"],
+      "matches": ["https://zilvo.co/*", "https://www.zilvo.co/*", "http://localhost:3000/*"],
       "js": ["content_zilvo.js"],
       "run_at": "document_idle"
     }
@@ -48,6 +48,7 @@
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://zilvo.co/*",
+    "https://www.zilvo.co/*",
     "http://localhost:3000/*",
     "<all_urls>"
   ]
