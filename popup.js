@@ -8,6 +8,7 @@
 
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
+import { ZILVO_API } from './helpers/constants.js';
 
 const $ = id => document.getElementById(id);
 
@@ -43,7 +44,7 @@ function switchTab(name) {
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const ZILVO_LOGIN_URL = 'https://www.zilvo.co/login';
+const ZILVO_LOGIN_URL = `${ZILVO_API}/login`;
 
 const authOverlay  = $('auth-overlay');
 const loginBtn     = $('login-btn');
@@ -76,9 +77,21 @@ async function initAuth() {
 }
 
 function syncAuthOverlay() {
-  const isCI     = _activeTab === 'linkedin' || _activeTab === 'website' || _activeTab === 'manual';
-  const loggedIn = !userBadge.classList.contains('hidden');
-  authOverlay.classList.toggle('hidden', !isCI || loggedIn);
+  const isCI       = _activeTab === 'linkedin' || _activeTab === 'website' || _activeTab === 'manual';
+  const loggedIn   = !userBadge.classList.contains('hidden');
+  const showOverlay = isCI && !loggedIn;
+
+  authOverlay.classList.toggle('hidden', !showOverlay);
+
+  // When the auth overlay is visible, hide all tab content so the login
+  // screen fills the full extension. Restore the active tab when logged in.
+  document.querySelectorAll('.tab-content').forEach(el => {
+    if (showOverlay) {
+      el.classList.add('hidden');
+    } else {
+      el.classList.toggle('hidden', el.id !== `tab-${_activeTab}`);
+    }
+  });
 }
 
 function showUserBadge(user) {

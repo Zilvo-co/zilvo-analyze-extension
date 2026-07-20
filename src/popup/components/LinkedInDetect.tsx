@@ -74,6 +74,8 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
       linkedinIndustry:      liData.industry        || undefined,
       linkedinEmployeeCount: liData.employeeCount   || undefined,
       linkedinFollowerCount: liData.followerCount   || undefined,
+      linkedinCountry:       liData.country         || undefined,
+      linkedinCity:          liData.city            || undefined,
       userInputField:        liData.linkedinUrl,
     });
   }, []);
@@ -205,6 +207,17 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
               🌐 {liData.websiteUrl.replace(/^https?:\/\/(www\.)?/, '')}
             </span>
           )}
+          {(liData.city || liData.country) && (
+            <span style={{ fontSize: 11, padding: '2px 8px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 999, color: 'var(--muted)' }}>
+              📍 {[liData.city, liData.country].filter(Boolean).join(', ')}
+            </span>
+          )}
+        </div>
+
+        {/* Cost/time meta row */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏱ ~7 seconds</span>
+          <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600 }}>💳 5 credits</span>
         </div>
 
         <button
@@ -212,7 +225,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
           style={{ padding: '9px 16px', fontSize: 13 }}
           onClick={() => handleAnalyze(liData)}
         >
-          Analyze Company · 5 credits
+          Analyze Company
         </button>
       </div>
     </div>

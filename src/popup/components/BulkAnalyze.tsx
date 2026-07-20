@@ -22,6 +22,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
   const [items, setItems]     = useState<BulkItem[]>([]);
   const [baseUrl, setBaseUrl] = useState('https://app.zilvo.co');
   const currentIdx            = useRef(0);
+  const batchIdRef            = useRef<string>('');
 
   useEffect(() => {
     chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, s => {
@@ -49,6 +50,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
               type:           'ANALYZE_FOR_CI',
               linkedinUrl:    next[nextIdx].url,
               userInputField: next[nextIdx].url,
+              batchId:        batchIdRef.current,
             });
             return next.map((it, i) =>
               i === nextIdx ? { ...it, status: 'processing' as const, message: 'Analyzing…' } : it
@@ -70,6 +72,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
               type:           'ANALYZE_FOR_CI',
               linkedinUrl:    next[nextIdx].url,
               userInputField: next[nextIdx].url,
+              batchId:        batchIdRef.current,
             });
             return next.map((it, i) =>
               i === nextIdx ? { ...it, status: 'processing' as const, message: 'Analyzing…' } : it
@@ -102,10 +105,17 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
       message: i === 0 ? 'Analyzing…' : undefined,
     }));
 
+    // Generate a unique batchId for this upload
+    batchIdRef.current = `bulk-${Date.now().toString(36)}`;
     currentIdx.current = 0;
     setItems(newItems);
     setMode('processing');
-    chrome.runtime.sendMessage({ type: 'ANALYZE_FOR_CI', linkedinUrl: unique[0], userInputField: unique[0] });
+    chrome.runtime.sendMessage({
+      type:           'ANALYZE_FOR_CI',
+      linkedinUrl:    unique[0],
+      userInputField: unique[0],
+      batchId:        batchIdRef.current,
+    });
   };
 
   const handleReset = () => {
@@ -113,6 +123,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
     setInputError('');
     setItems([]);
     currentIdx.current = 0;
+    batchIdRef.current = '';
     setMode('input');
   };
 
@@ -131,12 +142,19 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {authStrip}
+
+        {/* Cost info bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(10,102,194,0.06)', borderRadius: 8, border: '1px solid rgba(10,102,194,0.15)' }}>
+          <span style={{ fontSize: 11, color: 'var(--primary)' }}>💳</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>5 credits per company · Results saved to your dashboard</span>
+        </div>
+
         <div>
           <label className="form-label">LinkedIn Company URLs</label>
           <textarea
             style={{
               width: '100%', boxSizing: 'border-box',
-              height: 140, resize: 'vertical',
+              height: 130, resize: 'vertical',
               padding: '8px 10px', fontSize: 12,
               fontFamily: 'inherit', lineHeight: 1.5,
               border: `1px solid ${inputError ? 'var(--error)' : 'var(--border)'}`,
@@ -149,7 +167,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
           />
           {inputError && <p className="input-error">{inputError}</p>}
           <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>
-            One LinkedIn company URL per line.
+            One LinkedIn company URL per line. Each costs 5 credits.
           </p>
         </div>
         <button className="btn btn--primary" onClick={handleStart} disabled={!text.trim()}>
@@ -172,14 +190,15 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
             Bulk analysis complete
           </p>
           <p className="error-message" style={{ color: 'var(--muted)' }}>
-            {doneCount} saved{errorCount > 0 ? `, ${errorCount} failed` : ''}.
+            {doneCount} saved{errorCount > 0 ? `, ${errorCount} failed` : ''}.{' '}
+            {doneCount * 5} credits used.
           </p>
           <div className="error-actions">
             <button
               className="btn btn--primary"
-              onClick={() => chrome.tabs.create({ url: `${baseUrl}/tools/company-intelligence/companies` })}
+              onClick={() => chrome.tabs.create({ url: `${baseUrl}/tools/company-intelligence/jobs` })}
             >
-              Open Dashboard
+              View in Dashboard
             </button>
             <button className="btn btn--secondary" onClick={handleReset}>Analyze More</button>
           </div>

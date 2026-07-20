@@ -2,6 +2,7 @@ import { extractLinkedInData } from '../content/linkedin';
 import { extractWebsiteContent } from '../content/website';
 import { classifyCompany } from '../utils/api';
 import { waitForTabComplete, sleep, normalizeLinkedInUrl } from '../utils/helpers';
+import { getZilvoBaseUrl } from '../config';
 import type { AppSettings, ClassificationResult, LinkedInData, ExtractedContent, ProgressStep } from '../types';
 
 const LINKEDIN_RENDER_DELAY = 3_500;
@@ -90,16 +91,22 @@ async function getZilvoAuth(): Promise<{ token: string } | null> {
   });
 }
 
-async function getZilvoBaseUrl(): Promise<string> {
-  return new Promise(resolve => {
-    chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items => {
-      resolve(items.zilvoBaseUrl as string);
-    });
-  });
-}
 
 function sendCIProgress(step: string, message: string) {
   chrome.runtime.sendMessage({ type: 'CI_PROGRESS', step, message }).catch(() => {});
+}
+
+async function extractWithRetry(tabId: number, maxRetries = 2): Promise<import('../types').LinkedInData> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: extractLinkedInData,
+    });
+    const data = result.result as import('../types').LinkedInData;
+    if (data.websiteUrl || attempt === maxRetries) return data;
+    await sleep(2000);
+  }
+  return { companyName: null, websiteUrl: null, error: 'Could not find website URL after retries' };
 }
 
 // CI pipeline — if the website URL is already known (extracted by the popup from the current tab),
@@ -119,11 +126,7 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
     await sleep(LINKEDIN_RENDER_DELAY);
 
     sendCIProgress('extracting_linkedin', 'Extracting company website URL…');
-    const [liResult] = await chrome.scripting.executeScript({
-      target: { tabId: liTabId },
-      func: extractLinkedInData,
-    });
-    const liData = liResult.result as import('../types').LinkedInData;
+    const liData = await extractWithRetry(liTabId);
     await closeTab(liTabId);
 
     if (liData.websiteUrl) resolvedWebsite = liData.websiteUrl;
@@ -149,8 +152,11 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
       linkedinIndustry:      msg.linkedinIndustry       || undefined,
       linkedinEmployeeCount: msg.linkedinEmployeeCount  || undefined,
       linkedinFollowerCount: msg.linkedinFollowerCount  || undefined,
+      linkedinCountry:       msg.linkedinCountry        || undefined,
+      linkedinCity:          msg.linkedinCity           || undefined,
       pageContent:           msg.pageContent            || undefined,
       userInputField:        msg.userInputField         || undefined,
+      batchId:               msg.batchId               || undefined,
     }),
   });
 
@@ -162,6 +168,80 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
   const saved = await saveRes.json() as { jobId: string };
   return { jobId: saved.jobId };
 }
+
+// ── Website ↔ Extension auth sync ────────────────────────────────────────────
+// Messages arrive from zilvoSync.ts content script running on zilvo.co pages.
+
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.action === 'websiteLogin') {
+    const { token, user } = request as {
+      token: string;
+      user?: { name?: string; email?: string; credits?: number };
+    };
+    if (!token) return;
+    const name  = user?.name  || user?.email || '';
+    const email = user?.email || '';
+    chrome.storage.local.set({ zilvoToken: token, zilvoName: name, zilvoEmail: email }, () => {
+      chrome.runtime
+        .sendMessage({ action: 'authStateChanged', loggedIn: true, token, name, email })
+        .catch(() => {});
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'websiteLogout') {
+    chrome.storage.local.remove(['zilvoToken', 'zilvoName', 'zilvoEmail'], () => {
+      chrome.runtime
+        .sendMessage({ action: 'authStateChanged', loggedIn: false })
+        .catch(() => {});
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'extensionLogout') {
+    const token = (request as { token?: string }).token;
+
+    getZilvoBaseUrl().then(baseUrl => {
+      const logoutCall = token
+        ? fetch(`${baseUrl}/api/auth/logout`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(console.error)
+        : Promise.resolve();
+
+      const domains = ['zilvo.co', 'www.zilvo.co', 'app.zilvo.co'];
+      const clearCookies = async () => {
+        for (const domain of domains) {
+          const cookies = await chrome.cookies.getAll({ domain });
+          for (const cookie of cookies) {
+            const protocol = cookie.secure ? 'https' : 'http';
+            await chrome.cookies
+              .remove({ url: `${protocol}://${domain}${cookie.path}`, name: cookie.name })
+              .catch(() => {});
+          }
+        }
+      };
+
+      Promise.all([logoutCall, clearCookies()]).then(() => {
+        chrome.tabs.query(
+          { url: ['https://zilvo.co/*', 'https://www.zilvo.co/*', 'https://app.zilvo.co/*', 'http://localhost:3000/*'] },
+          tabs => {
+            for (const tab of tabs) {
+              if (tab.id) chrome.tabs.sendMessage(tab.id, { action: 'clearWebsiteAuth' }).catch(() => {});
+            }
+          }
+        );
+      });
+    });
+
+    sendResponse({ ok: true });
+    return true;
+  }
+});
+
+// ── CI & Classify pipeline message handlers ───────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'ANALYZE_FOR_CI') {

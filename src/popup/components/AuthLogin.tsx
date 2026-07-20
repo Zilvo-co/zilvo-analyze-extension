@@ -7,8 +7,21 @@ interface Props {
 export default function AuthLogin({ onLoggedIn }: Props) {
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
+  const [showPw,   setShowPw]   = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
+
+  const getBaseUrl = (): Promise<string> =>
+    new Promise(resolve =>
+      chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items =>
+        resolve(items.zilvoBaseUrl as string)
+      )
+    );
+
+  const openTab = async (path: string) => {
+    const base = await getBaseUrl();
+    chrome.tabs.create({ url: `${base}${path}` });
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,36 +29,29 @@ export default function AuthLogin({ onLoggedIn }: Props) {
     setError('');
 
     try {
-      const baseUrl: string = await new Promise(resolve => {
-        chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items =>
-          resolve(items.zilvoBaseUrl as string)
-        );
-      });
-
-      const res = await fetch(`${baseUrl}/api/auth/login`, {
-        method: 'POST',
+      const base = await getBaseUrl();
+      const res  = await fetch(`${base}/api/auth/login`, {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body:    JSON.stringify({ email, password }),
       });
 
       const data = await res.json() as {
         token?: string;
-        user?: { name?: string; email?: string };
+        user?:  { name?: string; email?: string };
         error?: string;
       };
+
       if (!res.ok || !data.token) {
         setError(data.error || 'Invalid credentials.');
         return;
       }
 
       const name = data.user?.name || email;
-      chrome.storage.local.set({
-        zilvoToken: data.token,
-        zilvoName:  name,
-        zilvoEmail: email,
-      }, () => {
-        onLoggedIn(data.token!, name, email);
-      });
+      chrome.storage.local.set(
+        { zilvoToken: data.token, zilvoName: name, zilvoEmail: email },
+        () => onLoggedIn(data.token!, name, email)
+      );
     } catch {
       setError('Network error. Check your connection.');
     } finally {
@@ -54,53 +60,109 @@ export default function AuthLogin({ onLoggedIn }: Props) {
   };
 
   return (
-    <form className="url-form" onSubmit={handleLogin}>
-      <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
-        Log in to your Zilvo account to save analyses to your dashboard.
-      </p>
+    <div className="auth-login">
 
-      <label className="form-label">Email</label>
-      <input
-        type="email"
-        className="url-input"
-        placeholder="you@company.com"
-        value={email}
-        onChange={e => { setEmail(e.target.value); setError(''); }}
-        disabled={loading}
-        autoFocus
-      />
+      {/* ── Hero ── */}
+      <div className="auth-hero">
+        <div className="auth-hero-icon">
+          <span>Z</span>
+        </div>
+        <h2 className="auth-hero-title">Sign in to Zilvo</h2>
+        <p className="auth-hero-sub">Analyze companies from LinkedIn &amp; websites</p>
+      </div>
 
-      <label className="form-label">Password</label>
-      <input
-        type="password"
-        className="url-input"
-        placeholder="••••••••"
-        value={password}
-        onChange={e => { setPassword(e.target.value); setError(''); }}
-        disabled={loading}
-      />
-
-      {error && <p className="input-error">{error}</p>}
-
-      <button type="submit" className="btn btn--primary" disabled={loading || !email || !password}>
-        {loading ? 'Logging in…' : 'Log In to Zilvo'}
+      {/* ── Google ── */}
+      <button type="button" className="auth-google-btn" onClick={() => openTab('/login')}>
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.658 14.082 17.64 11.775 17.64 9.2z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z"/>
+        </svg>
+        Continue with Google
       </button>
 
-      <p style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
-        Don&apos;t have an account?{' '}
-        <a
-          href="#"
-          style={{ color: 'var(--primary)' }}
-          onClick={e => {
-            e.preventDefault();
-            chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items => {
-              chrome.tabs.create({ url: `${items.zilvoBaseUrl}/signup` });
-            });
-          }}
+      {/* ── Divider ── */}
+      <div className="auth-divider"><span>or</span></div>
+
+      {/* ── Form ── */}
+      <form onSubmit={handleLogin} className="auth-form">
+
+        <div className="auth-field">
+          <label className="form-label" htmlFor="auth-email">Email</label>
+          <input
+            id="auth-email"
+            type="email"
+            className="url-input"
+            placeholder="you@company.com"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setError(''); }}
+            disabled={loading}
+            autoFocus
+            autoComplete="email"
+          />
+        </div>
+
+        <div className="auth-field">
+          <div className="auth-pw-label-row">
+            <label className="form-label" htmlFor="auth-password">Password</label>
+            <button type="button" className="auth-forgot" onClick={() => openTab('/forgot-password')}>
+              Forgot password?
+            </button>
+          </div>
+          <div className="auth-pw-wrapper">
+            <input
+              id="auth-password"
+              type={showPw ? 'text' : 'password'}
+              className="url-input"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(''); }}
+              disabled={loading}
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              className="auth-pw-toggle"
+              onClick={() => setShowPw(v => !v)}
+              title={showPw ? 'Hide password' : 'Show password'}
+            >
+              {showPw ? (
+                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              ) : (
+                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="input-error">{error}</p>}
+
+        <button
+          type="submit"
+          className="btn btn--primary auth-submit"
+          disabled={loading || !email || !password}
         >
+          {loading ? 'Signing in…' : 'Sign in'}
+        </button>
+
+      </form>
+
+      {/* ── Sign up ── */}
+      <p className="auth-signup-row">
+        Don&apos;t have an account?{' '}
+        <button type="button" className="auth-link" onClick={() => openTab('/signup')}>
           Sign up free
-        </a>
+        </button>
       </p>
-    </form>
+
+    </div>
   );
 }

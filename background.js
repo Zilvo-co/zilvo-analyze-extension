@@ -13,10 +13,7 @@
  */
 
 import { sleep, normalizeLinkedInUrl } from './helpers/utils.js';
-
-// ─── Zilvo API ────────────────────────────────────────────────────────────────
-// const ZILVO_API = 'http://localhost:3000';
-const ZILVO_API = 'https://www.zilvo.co';
+import { ZILVO_API } from './helpers/constants.js';
 
 // Open the side panel (right-side panel) when the toolbar icon is clicked.
 // Falls back silently in environments where the sidePanel API isn't available.

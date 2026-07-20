@@ -4,8 +4,9 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = (_env, argv) => ({
   entry: {
-    background: './src/background/index.ts',
-    popup: './src/popup/index.tsx',
+    background:  './src/background/index.ts',
+    popup:       './src/popup/index.tsx',
+    zilvoSync:   './src/content/zilvoSync.ts',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

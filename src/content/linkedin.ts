@@ -154,26 +154,30 @@ export function extractLinkedInCompanyData(): import('../types').LinkedInCompany
     }
   }
 
-  // Employee count
+  // Employee count — strategy 1: exact count from "See all X employees" link on people page
   let employeeCount: string | null = null;
-  for (const sel of [
-    '.org-top-card-summary-info-list__info-item',
-    '[data-field="staff_count"]',
-    '.org-about-company-module__company-size-definition-text',
-  ]) {
-    const els = document.querySelectorAll(sel);
-    for (const el of els) {
-      const text = el.textContent?.trim() || '';
-      if (/employee|follower/i.test(text) && /\d/.test(text)) {
-        if (/employee/i.test(text)) { employeeCount = text; break; }
-      }
-    }
-    if (employeeCount) break;
+  for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href*="/people/"]')) {
+    const text = a.textContent?.trim() || '';
+    const numMatch = text.match(/([\d,]+)\s+employees?/i);
+    if (numMatch) { employeeCount = numMatch[1].replace(/,/g, ''); break; }
   }
-  // Fallback: find text containing "employees"
+  // Strategy 2: data-field="staff_count" or known class selectors
   if (!employeeCount) {
-    const all = document.querySelectorAll('span, div, li');
-    for (const el of all) {
+    for (const sel of [
+      '[data-field="staff_count"]',
+      '.org-top-card-summary-info-list__info-item',
+      '.org-about-company-module__company-size-definition-text',
+    ]) {
+      for (const el of document.querySelectorAll(sel)) {
+        const text = el.textContent?.trim() || '';
+        if (/employee/i.test(text) && /\d/.test(text)) { employeeCount = text; break; }
+      }
+      if (employeeCount) break;
+    }
+  }
+  // Strategy 3: any text containing "employees"
+  if (!employeeCount) {
+    for (const el of document.querySelectorAll('span, div, li')) {
       const t = el.textContent?.trim() || '';
       if (/\d[\d,]*\s*[-–]?\s*\d*[\d,]*\s*employees?/i.test(t) && t.length < 80) {
         employeeCount = t; break;
@@ -191,5 +195,25 @@ export function extractLinkedInCompanyData(): import('../types').LinkedInCompany
     }
   }
 
-  return { companyName, websiteUrl, linkedinUrl, industry, employeeCount, followerCount };
+  // Headquarters — for country and city
+  let headquarters: string | null = null;
+  for (const dt of document.querySelectorAll('dt')) {
+    if (/^headquarters$/i.test(dt.textContent?.trim() ?? '')) {
+      headquarters = dt.nextElementSibling?.textContent?.trim() || null;
+      break;
+    }
+  }
+  let city: string | null = null;
+  let country: string | null = null;
+  if (headquarters) {
+    const parts = headquarters.split(',').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      city = parts[0];
+      country = parts[parts.length - 1];
+    } else if (parts.length === 1) {
+      country = parts[0];
+    }
+  }
+
+  return { companyName, websiteUrl, linkedinUrl, industry, employeeCount, followerCount, country, city };
 }

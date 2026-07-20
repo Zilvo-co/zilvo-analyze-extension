@@ -135,32 +135,62 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
     );
   }
 
+  const displayDomain = pageUrl.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '');
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {authStrip}
 
+      {/* Cost info bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(10,102,194,0.06)', borderRadius: 8, border: '1px solid rgba(10,102,194,0.15)' }}>
+        <span style={{ fontSize: 11, color: 'var(--primary)' }}>💳</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>5 credits per analysis · Results saved to your dashboard</span>
+      </div>
+
       {/* Current page quick-analyze */}
       {isValidPage && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-            Current Page
+        <div style={{ background: 'var(--surface)', border: '1.5px solid rgba(5,150,105,0.3)', borderRadius: 10, padding: '14px 14px' }}>
+          {/* Header with checkmark */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <span style={{ width: 18, height: 18, background: 'rgba(5,150,105,0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)', fontSize: 11, flexShrink: 0 }}>✓</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--success)' }}>Website detected</span>
+          </div>
+
+          {/* Domain */}
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayDomain}
           </p>
-          <p style={{ fontSize: 12, color: 'var(--text)', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {pageUrl.replace(/^https?:\/\/(www\.)?/, '')}
+
+          <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+            Ready to analyze this company.
           </p>
+
+          {/* Meta pills */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Est. time</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>~7 seconds</span>
+            </div>
+            <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cost</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>5 Credits</span>
+            </div>
+          </div>
+
           <button
             className="btn btn--primary"
-            style={{ padding: '8px 16px', fontSize: 13 }}
+            style={{ padding: '9px 16px', fontSize: 13 }}
             onClick={() => handleAnalyze(pageUrl, true)}
           >
-            🌐 Analyze Website · 5 credits
+            Analyze Company
           </button>
         </div>
       )}
 
       {/* Manual input */}
       <div>
-        <label className="form-label">Enter any website URL</label>
+        <label className="form-label">Or enter any website URL</label>
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             type="text"
@@ -179,9 +209,6 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
             Go
           </button>
         </div>
-        <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
-          5 credits per analysis. Results saved to your dashboard.
-        </p>
       </div>
     </div>
   );

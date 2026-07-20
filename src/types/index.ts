@@ -53,6 +53,8 @@ export interface LinkedInCompanyData {
   industry: string | null;
   employeeCount: string | null;
   followerCount: string | null;
+  country: string | null;
+  city: string | null;
   error?: string;
 }
 
@@ -139,8 +141,11 @@ export interface AnalyzeForCIMessage {
   linkedinIndustry?: string;
   linkedinEmployeeCount?: string;
   linkedinFollowerCount?: string;
+  linkedinCountry?: string;
+  linkedinCity?: string;
   pageContent?: string;
   userInputField?: string;
+  batchId?: string;
 }
 
 export interface CIProgressMessage {
