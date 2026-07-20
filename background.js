@@ -144,15 +144,15 @@ async function routeMessage(message, sendResponse) {
         break;
 
       case 'ANALYZE_COMPANY':
-        sendResponse(await analyzeLinkedInCompany(message.tabId, message.token, message.userInputField));
+        sendResponse(await analyzeLinkedInCompany(message.tabId, message.token, message.userInputField, message.batchId));
         break;
 
       case 'ANALYZE_COMPANY_URL':
-        sendResponse(await analyzeLinkedInUrl(message.linkedinUrl, message.token, message.userInputField));
+        sendResponse(await analyzeLinkedInUrl(message.linkedinUrl, message.token, message.userInputField, message.batchId));
         break;
 
       case 'ANALYZE_WEBSITE':
-        sendResponse(await analyzeWebsiteUrl(message.websiteUrl, message.linkedinUrl, message.token, message.tabId, message.userInputField));
+        sendResponse(await analyzeWebsiteUrl(message.websiteUrl, message.linkedinUrl, message.token, message.tabId, message.userInputField, message.batchId));
         break;
 
       // ── Web-app auth sync (content_zilvo.js) ─────────────────────────────
@@ -299,7 +299,7 @@ async function getTabDetection() {
   }
 }
 
-async function analyzeLinkedInCompany(tabId, token, userInputField) {
+async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
   let liData;
   try {
     const [result] = await chrome.scripting.executeScript({
@@ -333,6 +333,7 @@ async function analyzeLinkedInCompany(tabId, token, userInputField) {
     linkedinFollowerCount: liData.followerCount         || undefined,
     pageContent,
     userInputField:        userInputField               || liData.linkedinUrl,
+    batchId,
   });
 }
 
@@ -359,7 +360,7 @@ async function scrapeWebsiteInBackground(url) {
   }
 }
 
-async function analyzeLinkedInUrl(linkedinUrl, token, userInputField) {
+async function analyzeLinkedInUrl(linkedinUrl, token, userInputField, batchId) {
   let tabId = null;
   try {
     // Use base company URL — avoids the /about/ redirect and loads faster in background tabs
@@ -379,7 +380,7 @@ async function analyzeLinkedInUrl(linkedinUrl, token, userInputField) {
     ]);
     await sleep(3_500); // wait for React to render company data
 
-    return await analyzeLinkedInCompany(tabId, token, userInputField || linkedinUrl);
+    return await analyzeLinkedInCompany(tabId, token, userInputField || linkedinUrl, batchId);
   } catch (err) {
     return { success: false, error: err.message || 'Failed to load LinkedIn page.' };
   } finally {
@@ -390,7 +391,7 @@ async function analyzeLinkedInUrl(linkedinUrl, token, userInputField) {
   }
 }
 
-async function analyzeWebsiteUrl(websiteUrl, linkedinUrl, token, tabId, userInputField) {
+async function analyzeWebsiteUrl(websiteUrl, linkedinUrl, token, tabId, userInputField, batchId) {
   if (!websiteUrl) return { success: false, error: 'No website URL provided.' };
 
   let pageContent;
@@ -407,13 +408,13 @@ async function analyzeWebsiteUrl(websiteUrl, linkedinUrl, token, tabId, userInpu
     }
   }
 
-  return callZilvoAnalyze({ token, websiteUrl, linkedinUrl: linkedinUrl || undefined, pageContent, userInputField: userInputField || websiteUrl });
+  return callZilvoAnalyze({ token, websiteUrl, linkedinUrl: linkedinUrl || undefined, pageContent, userInputField: userInputField || websiteUrl, batchId });
 }
 
 async function callZilvoAnalyze({
   token, linkedinUrl, websiteUrl,
   companyName, linkedinIndustry, linkedinEmployeeCount, linkedinFollowerCount,
-  pageContent, userInputField,
+  pageContent, userInputField, batchId,
 }) {
   let res;
   try {
@@ -432,6 +433,7 @@ async function callZilvoAnalyze({
         linkedinFollowerCount,
         pageContent,
         userInputField,
+        batchId,
       }),
     });
   } catch (err) {

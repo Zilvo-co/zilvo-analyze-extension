@@ -578,6 +578,8 @@ async function handleBulkAnalyze() {
   ];
   if (!jobs.length) return;
 
+  const batchId = `bulk-${Date.now().toString(36)}`;
+
   _bulkRunning = true;
   $('bulk-run-btn').disabled           = true;
   $('bulk-run-spinner').style.display  = 'inline-block';
@@ -620,6 +622,7 @@ async function handleBulkAnalyze() {
           linkedinUrl:   job.url,
           token:         auth.token,
           userInputField: job.url,
+          batchId,
         });
       } else {
         result = await chrome.runtime.sendMessage({
@@ -629,6 +632,7 @@ async function handleBulkAnalyze() {
           token:         auth.token,
           tabId:         null,
           userInputField: job.url,
+          batchId,
         });
       }
     } catch (err) {
@@ -656,6 +660,9 @@ async function handleBulkAnalyze() {
   $('bulk-run-btn').disabled           = false;
   $('bulk-run-spinner').style.display  = 'none';
   $('bulk-run-text').textContent       = `Analyze All (${jobs.length})`;
+  
+  // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
+  $('bulk-dashboard-link').href = `${ZILVO_API}/tools/company-intelligence/jobs`;
   $('bulk-dashboard-link').classList.remove('hidden');
 }
 
