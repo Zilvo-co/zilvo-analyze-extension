@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractLinkedInCompanyData } from '../../content/linkedin';
+import { getActionCost } from '../../utils/zilvoApi';
+import { ZILVO_API_DEFAULT } from '../../config';
 import type { CIBackgroundMessage, LinkedInCompanyData } from '../../types';
+
+const CI_ANALYZE_FALLBACK_COST = 5;
 
 interface Props {
   onLogout: () => void;
@@ -14,16 +18,22 @@ type State =
   | { status: 'ready'; liData: LinkedInCompanyData }
   | { status: 'loading'; step: string; message: string }
   | { status: 'success'; baseUrl: string }
-  | { status: 'error'; error: string };
+  | { status: 'error'; error: string; code?: number; required?: number; remaining?: number };
 
 export default function LinkedInDetect({ onLogout, userName }: Props) {
   const [state,   setState]   = useState<State>({ status: 'checking' });
-  const [baseUrl, setBaseUrl] = useState('https://app.zilvo.co');
+  const [baseUrl, setBaseUrl] = useState(ZILVO_API_DEFAULT);
+  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
 
   useEffect(() => {
-    chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items => {
+    chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items => {
       setBaseUrl(items.zilvoBaseUrl as string);
     });
+
+    // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
+    getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)
+      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
+      .catch(() => {});
 
     chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
       const tab = tabs[0];
@@ -57,7 +67,13 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
       } else if (message.type === 'CI_COMPLETE') {
         setState({ status: 'success', baseUrl });
       } else if (message.type === 'CI_ERROR') {
-        setState({ status: 'error', error: message.error });
+        setState({
+          status: 'error',
+          error: message.error,
+          code: message.code,
+          required: message.required,
+          remaining: message.remaining,
+        });
       }
     };
     chrome.runtime.onMessage.addListener(listener);
@@ -152,15 +168,28 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
   }
 
   if (state.status === 'error') {
+    // 402 → surface a top-up CTA instead of a dead-end "Try Again" that just re-fails.
+    const outOfCredits = state.code === 402;
+    const creditsMsg =
+      `Not enough credits to run this analysis.` +
+      (state.required != null
+        ? ` You need ${state.required}${state.remaining != null ? ` but have ${state.remaining}` : ''}.`
+        : '') +
+      ` Top up to continue.`;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {authStrip}
         <div className="error-state" style={{ marginTop: 0 }}>
           <div className="error-icon">!</div>
-          <p className="error-message">{state.error}</p>
+          <p className="error-message">{outOfCredits ? creditsMsg : state.error}</p>
           <div className="error-actions">
+            {outOfCredits && (
+              <button className="btn btn--primary" onClick={() => chrome.tabs.create({ url: `${baseUrl}/billing` })}>
+                Buy Credits
+              </button>
+            )}
             <button className="btn btn--secondary" onClick={() => setState({ status: 'not_linkedin' })}>
-              Try Again
+              {outOfCredits ? 'Back' : 'Try Again'}
             </button>
           </div>
         </div>
@@ -217,7 +246,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
         {/* Cost/time meta row */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏱ ~7 seconds</span>
-          <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600 }}>💳 5 credits</span>
+          <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600 }}>💳 {creditCost} credits</span>
         </div>
 
         <button

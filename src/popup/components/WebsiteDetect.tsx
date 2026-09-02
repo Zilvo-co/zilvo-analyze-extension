@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractWebsiteContent } from '../../content/website';
+import { getActionCost } from '../../utils/zilvoApi';
+import { ZILVO_API_DEFAULT } from '../../config';
 import type { CIBackgroundMessage, ExtractedContent } from '../../types';
+
+const CI_ANALYZE_FALLBACK_COST = 5;
 
 interface Props {
   onLogout: () => void;
@@ -11,20 +15,25 @@ type State =
   | { status: 'idle' }
   | { status: 'loading'; step: string; message: string }
   | { status: 'success'; baseUrl: string }
-  | { status: 'error'; error: string };
+  | { status: 'error'; error: string; code?: number; required?: number; remaining?: number };
 
 export default function WebsiteDetect({ onLogout, userName }: Props) {
   const [state,      setState]      = useState<State>({ status: 'idle' });
   const [pageUrl,    setPageUrl]    = useState('');
   const [tabId,      setTabId]      = useState<number | null>(null);
   const [manualUrl,  setManualUrl]  = useState('');
-  const [baseUrl,    setBaseUrl]    = useState('https://app.zilvo.co');
+  const [baseUrl,    setBaseUrl]    = useState(ZILVO_API_DEFAULT);
+  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
   const [isValidPage, setIsValidPage] = useState(false);
 
   useEffect(() => {
-    chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items => {
+    chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items => {
       setBaseUrl(items.zilvoBaseUrl as string);
     });
+    // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
+    getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)
+      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
+      .catch(() => {});
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const tab = tabs[0];
       const url = tab?.url || '';
@@ -41,7 +50,13 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
       } else if (message.type === 'CI_COMPLETE') {
         setState({ status: 'success', baseUrl });
       } else if (message.type === 'CI_ERROR') {
-        setState({ status: 'error', error: message.error });
+        setState({
+          status: 'error',
+          error: message.error,
+          code: message.code,
+          required: message.required,
+          remaining: message.remaining,
+        });
       }
     };
     chrome.runtime.onMessage.addListener(listener);
@@ -121,14 +136,29 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
   }
 
   if (state.status === 'error') {
+    // 402 → surface a top-up CTA instead of a dead-end "Try Again" that just re-fails.
+    const outOfCredits = state.code === 402;
+    const creditsMsg =
+      `Not enough credits to run this analysis.` +
+      (state.required != null
+        ? ` You need ${state.required}${state.remaining != null ? ` but have ${state.remaining}` : ''}.`
+        : '') +
+      ` Top up to continue.`;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {authStrip}
         <div className="error-state" style={{ marginTop: 0 }}>
           <div className="error-icon">!</div>
-          <p className="error-message">{state.error}</p>
+          <p className="error-message">{outOfCredits ? creditsMsg : state.error}</p>
           <div className="error-actions">
-            <button className="btn btn--secondary" onClick={() => setState({ status: 'idle' })}>Try Again</button>
+            {outOfCredits && (
+              <button className="btn btn--primary" onClick={() => chrome.tabs.create({ url: `${baseUrl}/billing` })}>
+                Buy Credits
+              </button>
+            )}
+            <button className="btn btn--secondary" onClick={() => setState({ status: 'idle' })}>
+              {outOfCredits ? 'Back' : 'Try Again'}
+            </button>
           </div>
         </div>
       </div>
@@ -144,7 +174,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
       {/* Cost info bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(10,102,194,0.06)', borderRadius: 8, border: '1px solid rgba(10,102,194,0.15)' }}>
         <span style={{ fontSize: 11, color: 'var(--primary)' }}>💳</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>5 credits per analysis · Results saved to your dashboard</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{creditCost} credits per analysis · Results saved to your dashboard</span>
       </div>
 
       {/* Current page quick-analyze */}
@@ -174,7 +204,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
             <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cost</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>5 Credits</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>{creditCost} Credits</span>
             </div>
           </div>
 

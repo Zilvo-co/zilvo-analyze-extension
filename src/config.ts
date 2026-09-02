@@ -1,4 +1,4 @@
-export const ZILVO_API_DEFAULT = 'https://app.zilvo.co';
+export const ZILVO_API_DEFAULT = 'https://www.zilvo.co';
 
 export function getZilvoBaseUrl(): Promise<string> {
   return new Promise(resolve => {

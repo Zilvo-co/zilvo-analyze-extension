@@ -2,7 +2,7 @@ import { extractLinkedInData } from '../content/linkedin';
 import { extractWebsiteContent } from '../content/website';
 import { classifyCompany } from '../utils/api';
 import { waitForTabComplete, sleep, normalizeLinkedInUrl } from '../utils/helpers';
-import { getZilvoBaseUrl } from '../config';
+import { zilvoFetch, logout as zilvoLogout } from '../utils/zilvoApi';
 import type { AppSettings, ClassificationResult, LinkedInData, ExtractedContent, ProgressStep } from '../types';
 
 const LINKEDIN_RENDER_DELAY = 3_500;
@@ -136,36 +136,31 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
 
   if (!resolvedWebsite) throw new Error('No website URL available for analysis.');
 
-  // Submit to backend — server fetches content + runs OpenAI analysis
+  // Submit to backend — server fetches content + runs OpenAI analysis.
+  // The billable `ci.analyze` action is charged SERVER-SIDE here; do not charge
+  // client-side. zilvoFetch surfaces 401 (session expired) / 402 (insufficient
+  // credits) as typed errors.
   sendCIProgress('analyzing', 'Analyzing company with AI…');
-  const baseUrl = await getZilvoBaseUrl();
-  const saveRes = await fetch(`${baseUrl}/api/company-intelligence/analyze`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization:  `Bearer ${auth.token}`,
+  const saved = await zilvoFetch<{ jobId: string }>(
+    '/api/company-intelligence/analyze',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        linkedinUrl:           msg.linkedinUrl            || undefined,
+        websiteUrl:            resolvedWebsite,
+        companyName:           resolvedName               || undefined,
+        linkedinIndustry:      msg.linkedinIndustry       || undefined,
+        linkedinEmployeeCount: msg.linkedinEmployeeCount  || undefined,
+        linkedinFollowerCount: msg.linkedinFollowerCount  || undefined,
+        linkedinCountry:       msg.linkedinCountry        || undefined,
+        linkedinCity:          msg.linkedinCity           || undefined,
+        pageContent:           msg.pageContent            || undefined,
+        userInputField:        msg.userInputField         || undefined,
+        batchId:               msg.batchId               || undefined,
+      }),
     },
-    body: JSON.stringify({
-      linkedinUrl:           msg.linkedinUrl            || undefined,
-      websiteUrl:            resolvedWebsite,
-      companyName:           resolvedName               || undefined,
-      linkedinIndustry:      msg.linkedinIndustry       || undefined,
-      linkedinEmployeeCount: msg.linkedinEmployeeCount  || undefined,
-      linkedinFollowerCount: msg.linkedinFollowerCount  || undefined,
-      linkedinCountry:       msg.linkedinCountry        || undefined,
-      linkedinCity:          msg.linkedinCity           || undefined,
-      pageContent:           msg.pageContent            || undefined,
-      userInputField:        msg.userInputField         || undefined,
-      batchId:               msg.batchId               || undefined,
-    }),
-  });
-
-  if (!saveRes.ok) {
-    const errData = await saveRes.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error((errData.error as string) || `Analysis failed (${saveRes.status})`);
-  }
-
-  const saved = await saveRes.json() as { jobId: string };
+    auth.token
+  );
   return { jobId: saved.jobId };
 }
 
@@ -203,12 +198,9 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === 'extensionLogout') {
     const token = (request as { token?: string }).token;
 
-    getZilvoBaseUrl().then(baseUrl => {
+    (async () => {
       const logoutCall = token
-        ? fetch(`${baseUrl}/api/auth/logout`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-          }).catch(console.error)
+        ? zilvoLogout(token).catch(console.error)
         : Promise.resolve();
 
       const domains = ['zilvo.co', 'www.zilvo.co', 'app.zilvo.co'];
@@ -234,7 +226,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           }
         );
       });
-    });
+    })();
 
     sendResponse({ ok: true });
     return true;
@@ -252,7 +244,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       })
       .catch((err: unknown) => {
         const error = err instanceof Error ? err.message : String(err);
-        chrome.runtime.sendMessage({ type: 'CI_ERROR', error }).catch(() => {});
+        // Forward the typed fields (401/402 + required/remaining) so the popup can
+        // render an actionable prompt (re-auth / top-up) instead of a bare string.
+        const e = err as { code?: number; required?: number; remaining?: number };
+        chrome.runtime
+          .sendMessage({ type: 'CI_ERROR', error, code: e?.code, required: e?.required, remaining: e?.remaining })
+          .catch(() => {});
         sendResponse({ ok: false, error });
       });
 

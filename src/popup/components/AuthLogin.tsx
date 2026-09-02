@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { login } from '../../utils/zilvoApi';
+import { ZILVO_API_DEFAULT } from '../../config';
 
 interface Props {
   onLoggedIn: (token: string, name: string, email: string) => void;
@@ -13,7 +15,7 @@ export default function AuthLogin({ onLoggedIn }: Props) {
 
   const getBaseUrl = (): Promise<string> =>
     new Promise(resolve =>
-      chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items =>
+      chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items =>
         resolve(items.zilvoBaseUrl as string)
       )
     );
@@ -29,31 +31,20 @@ export default function AuthLogin({ onLoggedIn }: Props) {
     setError('');
 
     try {
-      const base = await getBaseUrl();
-      const res  = await fetch(`${base}/api/auth/login`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json() as {
-        token?: string;
-        user?:  { name?: string; email?: string };
-        error?: string;
-      };
-
-      if (!res.ok || !data.token) {
-        setError(data.error || 'Invalid credentials.');
+      const { token, user } = await login(email, password);
+      if (!token) {
+        setError('Invalid credentials.');
         return;
       }
 
-      const name = data.user?.name || email;
+      const name = user?.name || email;
       chrome.storage.local.set(
-        { zilvoToken: data.token, zilvoName: name, zilvoEmail: email },
-        () => onLoggedIn(data.token!, name, email)
+        { zilvoToken: token, zilvoName: name, zilvoEmail: email },
+        () => onLoggedIn(token, name, email)
       );
-    } catch {
-      setError('Network error. Check your connection.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setError(msg && msg !== 'Session expired' ? msg : 'Invalid credentials.');
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ import AuthLogin from './components/AuthLogin';
 import LinkedInDetect from './components/LinkedInDetect';
 import WebsiteDetect from './components/WebsiteDetect';
 import BulkAnalyze from './components/BulkAnalyze';
+import { getCredits } from '../utils/zilvoApi';
 
 type ActiveTab = 'linkedin' | 'website' | 'manual';
 
@@ -45,17 +46,9 @@ export default function App() {
   // Fetch credits from Zilvo backend when logged in
   useEffect(() => {
     if (!zilvoToken) { setCredits(null); return; }
-    chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items => {
-      const baseUrl = items.zilvoBaseUrl as string;
-      fetch(`${baseUrl}/api/credits`, {
-        headers: { Authorization: `Bearer ${zilvoToken}` },
-      })
-        .then(r => r.ok ? r.json() : null)
-        .then((data: { credits?: number } | null) => {
-          if (data?.credits != null) setCredits(data.credits);
-        })
-        .catch(() => {});
-    });
+    getCredits(zilvoToken)
+      .then(credits => setCredits(credits))
+      .catch(() => {});
   }, [zilvoToken]);
 
   const handleLogout = () => {

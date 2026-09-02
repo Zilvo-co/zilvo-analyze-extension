@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractLinkedInCompanyData } from '../../content/linkedin';
+import { getActionCost } from '../../utils/zilvoApi';
+import { ZILVO_API_DEFAULT } from '../../config';
 import type { CIBackgroundMessage, LinkedInCompanyData } from '../../types';
+
+const CI_ANALYZE_FALLBACK_COST = 5;
 
 interface Props {
   onLogout: () => void;
@@ -20,12 +24,18 @@ export default function CIAnalyze({ onLogout, userName }: Props) {
   const [pageUrl,   setPageUrl]   = useState('');
   const [isLinkedIn, setIsLinkedIn] = useState(false);
   const [manualUrl, setManualUrl] = useState('');
-  const [baseUrl,   setBaseUrl]   = useState('https://app.zilvo.co');
+  const [baseUrl,   setBaseUrl]   = useState(ZILVO_API_DEFAULT);
+  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
 
   useEffect(() => {
-    chrome.storage.local.get({ zilvoBaseUrl: 'https://app.zilvo.co' }, items => {
+    chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items => {
       setBaseUrl(items.zilvoBaseUrl as string);
     });
+
+    // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
+    getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)
+      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
+      .catch(() => {});
 
     chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
       const tab = tabs[0];
@@ -226,7 +236,7 @@ export default function CIAnalyze({ onLogout, userName }: Props) {
             style={{ padding: '9px 16px', fontSize: 13 }}
             onClick={() => handleAnalyzeLinkedIn(liData)}
           >
-            Analyze Company · 5 credits
+            Analyze Company · {creditCost} credits
           </button>
         </div>
       </div>
@@ -257,7 +267,7 @@ export default function CIAnalyze({ onLogout, userName }: Props) {
             style={{ padding: '8px 16px', fontSize: 13 }}
             onClick={() => handleAnalyzeManual(pageUrl)}
           >
-            🌐 Analyze Website · 5 credits
+            🌐 Analyze Website · {creditCost} credits
           </button>
         </div>
       )}

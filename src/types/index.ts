@@ -162,6 +162,11 @@ export interface CICompleteMessage {
 export interface CIErrorMessage {
   type: 'CI_ERROR';
   error: string;
+  /** HTTP status when the failure came from the API (401 = auth, 402 = credits). */
+  code?: number;
+  /** On 402: credits needed for the action and the caller's current balance. */
+  required?: number;
+  remaining?: number;
 }
 
 export type CIBackgroundMessage =
