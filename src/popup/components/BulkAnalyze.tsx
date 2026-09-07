@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isValidLinkedInCompanyUrl, normalizeLinkedInUrl } from '../../utils/helpers';
 import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_API_DEFAULT } from '../../config';
+import { ZILVO_APP_DEFAULT } from '../../config';
 import type { CIBackgroundMessage } from '../../types';
 
 const CI_ANALYZE_FALLBACK_COST = 5;
@@ -25,14 +25,14 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
   const [inputError, setInputError] = useState('');
   const [items, setItems]     = useState<BulkItem[]>([]);
   const [creditsExhausted, setCreditsExhausted] = useState(false);
-  const [baseUrl, setBaseUrl] = useState(ZILVO_API_DEFAULT);
+  const [baseUrl, setBaseUrl] = useState(ZILVO_APP_DEFAULT);
   const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
   const currentIdx            = useRef(0);
   const batchIdRef            = useRef<string>('');
 
   useEffect(() => {
-    chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, s => {
-      setBaseUrl(s.zilvoBaseUrl as string);
+    chrome.storage.local.get({ zilvoAppUrl: ZILVO_APP_DEFAULT }, s => {
+      setBaseUrl(s.zilvoAppUrl as string);
     });
   }, []);
 

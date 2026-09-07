@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zilvo Analyze — Company Classifier",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Classify companies from LinkedIn URLs using AI.",
 
   "icons": {
@@ -28,9 +28,9 @@
   "content_scripts": [
     {
       "matches": [
+        "https://app.zilvo.co/*",
         "https://zilvo.co/*",
         "https://www.zilvo.co/*",
-        "https://app.zilvo.co/*",
         "http://localhost:3000/*"
       ],
       "js": ["zilvoSync.js"],
@@ -50,6 +50,7 @@
     "https://zilvo.co/*",
     "https://www.zilvo.co/*",
     "https://app.zilvo.co/*",
+    "https://api.zilvo.co/*",
     "http://localhost:3000/*",
     "<all_urls>"
   ]

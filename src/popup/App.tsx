@@ -15,11 +15,16 @@ export default function App() {
   const [zilvoName,  setZilvoName]  = useState('');
   const [credits,    setCredits]    = useState<number | null>(null);
 
-  // Restore auth from storage on open
+  // Resolve auth on open. The background's getActiveToken() is the single
+  // resolver the analyze pipeline uses too, so the credits shown here always
+  // belong to the account that will actually be charged.
   useEffect(() => {
-    chrome.storage.local.get({ zilvoToken: '', zilvoName: '' }, items => {
-      setZilvoToken(items.zilvoToken as string);
-      setZilvoName(items.zilvoName as string);
+    chrome.runtime.sendMessage({ action: 'getActiveToken' }, (res?: { token?: string | null }) => {
+      if (chrome.runtime.lastError) return;
+      const token = res?.token || '';
+      setZilvoToken(token);
+      if (!token) { setZilvoName(''); return; }
+      chrome.storage.local.get({ zilvoName: '' }, items => setZilvoName(items.zilvoName as string));
     });
   }, []);
 
@@ -52,15 +57,12 @@ export default function App() {
   }, [zilvoToken]);
 
   const handleLogout = () => {
-    chrome.storage.local.get({ zilvoToken: '' }, items => {
-      // Tell background to call API logout + clear zilvo.co cookies
-      chrome.runtime.sendMessage({ action: 'extensionLogout', token: items.zilvoToken }).catch(() => {});
-      chrome.storage.local.remove(['zilvoToken', 'zilvoName', 'zilvoEmail'], () => {
-        setZilvoToken('');
-        setZilvoName('');
-        setCredits(null);
-      });
-    });
+    // Background calls the API logout and purges storage, every origin's
+    // localStorage and all cookies — don't clear only the cached copy here.
+    chrome.runtime.sendMessage({ action: 'extensionLogout', token: zilvoToken }).catch(() => {});
+    setZilvoToken('');
+    setZilvoName('');
+    setCredits(null);
   };
 
   if (showSettings) {

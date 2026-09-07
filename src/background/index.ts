@@ -3,6 +3,8 @@ import { extractWebsiteContent } from '../content/website';
 import { classifyCompany } from '../utils/api';
 import { waitForTabComplete, sleep, normalizeLinkedInUrl } from '../utils/helpers';
 import { zilvoFetch, logout as zilvoLogout } from '../utils/zilvoApi';
+import { getActiveToken, clearAllTokens, adoptToken } from '../utils/authToken';
+import { TOKEN_ORIGINS, TOKEN_RESET_VERSION, getAppOrigins } from '../config';
 import type { AppSettings, ClassificationResult, LinkedInData, ExtractedContent, ProgressStep } from '../types';
 
 const LINKEDIN_RENDER_DELAY = 3_500;
@@ -84,11 +86,11 @@ async function classifyPipeline(linkedinUrl: string): Promise<{
 // ── Company Intelligence pipeline ────────────────────────────────────────────
 
 async function getZilvoAuth(): Promise<{ token: string } | null> {
-  return new Promise(resolve => {
-    chrome.storage.local.get({ zilvoToken: '' }, items => {
-      resolve(items.zilvoToken ? { token: items.zilvoToken as string } : null);
-    });
-  });
+  // Never read chrome.storage directly — getActiveToken() is the one resolver
+  // the popup uses too, so /api/company-intelligence/analyze and /api/credits
+  // always send the SAME token.
+  const token = await getActiveToken();
+  return token ? { token } : null;
 }
 
 
@@ -164,6 +166,20 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
   return { jobId: saved.jobId };
 }
 
+// One-time purge on install, and on update whenever TOKEN_RESET_VERSION has
+// changed — so the move to app.zilvo.co / api.zilvo.co cannot carry a legacy
+// token forward, while ordinary version bumps do not log anyone out.
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason !== 'install' && reason !== 'update') return;
+  chrome.storage.local.get({ zilvoTokenResetVersion: '' }, ({ zilvoTokenResetVersion }) => {
+    if (zilvoTokenResetVersion === TOKEN_RESET_VERSION) return;
+    console.log('[Zilvo] token reset —', zilvoTokenResetVersion || 'none', '→', TOKEN_RESET_VERSION);
+    clearAllTokens()
+      .then(() => chrome.storage.local.set({ zilvoTokenResetVersion: TOKEN_RESET_VERSION }))
+      .catch(console.error);
+  });
+});
+
 // ── Website ↔ Extension auth sync ────────────────────────────────────────────
 // Messages arrive from zilvoSync.ts content script running on zilvo.co pages.
 
@@ -174,24 +190,44 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       user?: { name?: string; email?: string; credits?: number };
     };
     if (!token) return;
-    const name  = user?.name  || user?.email || '';
-    const email = user?.email || '';
-    chrome.storage.local.set({ zilvoToken: token, zilvoName: name, zilvoEmail: email }, () => {
-      chrome.runtime
-        .sendMessage({ action: 'authStateChanged', loggedIn: true, token, name, email })
-        .catch(() => {});
-    });
-    sendResponse({ ok: true });
+    // adoptToken rejects an expired token and refuses to let a stale tab
+    // re-syncing on focus overwrite a newer session.
+    adoptToken(token, user)
+      .then(ok => sendResponse({ ok }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  // The popup asks for the token instead of reading chrome.storage, so it sends
+  // the same token as the analyze pipeline.
+  if (request.action === 'getActiveToken') {
+    getActiveToken()
+      .then(token => sendResponse({ token: token || null }))
+      .catch(() => sendResponse({ token: null }));
     return true;
   }
 
   if (request.action === 'websiteLogout') {
-    chrome.storage.local.remove(['zilvoToken', 'zilvoName', 'zilvoEmail'], () => {
-      chrome.runtime
-        .sendMessage({ action: 'authStateChanged', loggedIn: false })
-        .catch(() => {});
-    });
-    sendResponse({ ok: true });
+    (async () => {
+      // The content script runs on the marketing and legacy hosts too, and
+      // those never hold a token — so "no token here" is only a logout when it
+      // comes from the host that actually owns the login. Otherwise merely
+      // opening zilvo.co would sign out a popup-authenticated user, and the
+      // logout tombstone would make that permanent.
+      const senderUrl = _sender.tab?.url || '';
+      const appOrigins = await getAppOrigins();
+      const fromAppOrigin = appOrigins.some(pattern => {
+        const origin = pattern.replace(/\/\*$/, '');
+        return senderUrl.startsWith(origin);
+      });
+      if (!fromAppOrigin) {
+        console.log('[Zilvo] websiteLogout — ignoring non-app origin:', senderUrl || '(unknown)');
+        sendResponse({ ok: false, ignored: true });
+        return;
+      }
+      await clearAllTokens().catch(console.error);
+      sendResponse({ ok: true });
+    })();
     return true;
   }
 
@@ -199,36 +235,31 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     const token = (request as { token?: string }).token;
 
     (async () => {
-      const logoutCall = token
-        ? zilvoLogout(token).catch(console.error)
-        : Promise.resolve();
+      // Invalidate server-side with the same token everything else uses.
+      // Resolved BEFORE the purge — afterwards there is nothing left to read.
+      const authToken = token || (await getActiveToken());
 
-      const domains = ['zilvo.co', 'www.zilvo.co', 'app.zilvo.co'];
-      const clearCookies = async () => {
-        for (const domain of domains) {
-          const cookies = await chrome.cookies.getAll({ domain });
-          for (const cookie of cookies) {
-            const protocol = cookie.secure ? 'https' : 'http';
-            await chrome.cookies
-              .remove({ url: `${protocol}://${domain}${cookie.path}`, name: cookie.name })
-              .catch(() => {});
-          }
-        }
-      };
+      // Await the whole purge before responding. Replying first and letting the
+      // wipe run detached let MV3 shut the service worker down mid-purge, which
+      // is how a half-cleared session survived a logout.
+      await Promise.all([
+        authToken ? zilvoLogout(authToken).catch(console.error) : Promise.resolve(),
+        clearAllTokens().catch(console.error),
+      ]);
 
-      Promise.all([logoutCall, clearCookies()]).then(() => {
-        chrome.tabs.query(
-          { url: ['https://zilvo.co/*', 'https://www.zilvo.co/*', 'https://app.zilvo.co/*', 'http://localhost:3000/*'] },
-          tabs => {
-            for (const tab of tabs) {
-              if (tab.id) chrome.tabs.sendMessage(tab.id, { action: 'clearWebsiteAuth' }).catch(() => {});
-            }
-          }
-        );
-      });
+      // Storage, localStorage and cookies are gone; now redirect the open tabs.
+      const tabs = await chrome.tabs.query({ url: TOKEN_ORIGINS }).catch(() => [] as chrome.tabs.Tab[]);
+      await Promise.all(
+        tabs.map(tab =>
+          tab.id
+            ? chrome.tabs.sendMessage(tab.id, { action: 'clearWebsiteAuth' }).catch(() => {})
+            : Promise.resolve()
+        )
+      );
+
+      sendResponse({ ok: true });
     })();
 
-    sendResponse({ ok: true });
     return true;
   }
 });
@@ -247,6 +278,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         // Forward the typed fields (401/402 + required/remaining) so the popup can
         // render an actionable prompt (re-auth / top-up) instead of a bare string.
         const e = err as { code?: number; required?: number; remaining?: number };
+        // Expired session → purge every copy of the token, otherwise the stale
+        // localStorage copy gets re-adopted on the very next call.
+        if (e?.code === 401) clearAllTokens().catch(console.error);
         chrome.runtime
           .sendMessage({ type: 'CI_ERROR', error, code: e?.code, required: e?.required, remaining: e?.remaining })
           .catch(() => {});

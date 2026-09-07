@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractWebsiteContent } from '../../content/website';
 import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_API_DEFAULT } from '../../config';
+import { ZILVO_APP_DEFAULT } from '../../config';
 import type { CIBackgroundMessage, ExtractedContent } from '../../types';
 
 const CI_ANALYZE_FALLBACK_COST = 5;
@@ -22,13 +22,13 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
   const [pageUrl,    setPageUrl]    = useState('');
   const [tabId,      setTabId]      = useState<number | null>(null);
   const [manualUrl,  setManualUrl]  = useState('');
-  const [baseUrl,    setBaseUrl]    = useState(ZILVO_API_DEFAULT);
+  const [baseUrl,    setBaseUrl]    = useState(ZILVO_APP_DEFAULT);
   const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
   const [isValidPage, setIsValidPage] = useState(false);
 
   useEffect(() => {
-    chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items => {
-      setBaseUrl(items.zilvoBaseUrl as string);
+    chrome.storage.local.get({ zilvoAppUrl: ZILVO_APP_DEFAULT }, items => {
+      setBaseUrl(items.zilvoAppUrl as string);
     });
     // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
     getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)

@@ -8,7 +8,7 @@
 
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
-import { ZILVO_API } from './helpers/constants.js';
+import { ZILVO_APP } from './helpers/constants.js';
 
 const $ = id => document.getElementById(id);
 
@@ -44,7 +44,9 @@ function switchTab(name) {
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const ZILVO_LOGIN_URL = `${ZILVO_API}/login`;
+// /login is a web page on the app host, not an API route — ZILVO_API here
+// sent users to https://api.zilvo.co/login, which 404s.
+const ZILVO_LOGIN_URL = `${ZILVO_APP}/login`;
 
 const authOverlay  = $('auth-overlay');
 const loginBtn     = $('login-btn');
@@ -662,7 +664,7 @@ async function handleBulkAnalyze() {
   $('bulk-run-text').textContent       = `Analyze All (${jobs.length})`;
   
   // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
-  $('bulk-dashboard-link').href = `${ZILVO_API}/tools/company-intelligence/jobs`;
+  $('bulk-dashboard-link').href = `${ZILVO_APP}/tools/company-intelligence/jobs`;
   $('bulk-dashboard-link').classList.remove('hidden');
 }
 

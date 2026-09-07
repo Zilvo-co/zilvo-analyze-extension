@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractLinkedInCompanyData } from '../../content/linkedin';
 import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_API_DEFAULT } from '../../config';
+import { ZILVO_APP_DEFAULT } from '../../config';
 import type { CIBackgroundMessage, LinkedInCompanyData } from '../../types';
 
 const CI_ANALYZE_FALLBACK_COST = 5;
@@ -22,12 +22,12 @@ type State =
 
 export default function LinkedInDetect({ onLogout, userName }: Props) {
   const [state,   setState]   = useState<State>({ status: 'checking' });
-  const [baseUrl, setBaseUrl] = useState(ZILVO_API_DEFAULT);
+  const [baseUrl, setBaseUrl] = useState(ZILVO_APP_DEFAULT);
   const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
 
   useEffect(() => {
-    chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items => {
-      setBaseUrl(items.zilvoBaseUrl as string);
+    chrome.storage.local.get({ zilvoAppUrl: ZILVO_APP_DEFAULT }, items => {
+      setBaseUrl(items.zilvoAppUrl as string);
     });
 
     // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { login } from '../../utils/zilvoApi';
-import { ZILVO_API_DEFAULT } from '../../config';
+import { getZilvoAppUrl } from '../../config';
 
 interface Props {
   onLoggedIn: (token: string, name: string, email: string) => void;
@@ -13,16 +13,11 @@ export default function AuthLogin({ onLoggedIn }: Props) {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
 
-  const getBaseUrl = (): Promise<string> =>
-    new Promise(resolve =>
-      chrome.storage.local.get({ zilvoBaseUrl: ZILVO_API_DEFAULT }, items =>
-        resolve(items.zilvoBaseUrl as string)
-      )
-    );
-
+  // /login, /signup and /forgot-password are web pages — they live on the app
+  // host, NOT the API host. Using the API base here opens a 404.
   const openTab = async (path: string) => {
-    const base = await getBaseUrl();
-    chrome.tabs.create({ url: `${base}${path}` });
+    const appUrl = await getZilvoAppUrl();
+    chrome.tabs.create({ url: `${appUrl}${path}` });
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -38,9 +33,22 @@ export default function AuthLogin({ onLoggedIn }: Props) {
       }
 
       const name = user?.name || email;
-      chrome.storage.local.set(
-        { zilvoToken: token, zilvoName: name, zilvoEmail: email },
-        () => onLoggedIn(token, name, email)
+      // Route through the background so this token is reconciled against any
+      // token already held by an open app tab — two independent writers of the
+      // same storage key is exactly how two accounts end up in play at once.
+      chrome.runtime.sendMessage(
+        { action: 'websiteLogin', token, user: { ...user, name, email } },
+        (res?: { ok?: boolean }) => {
+          if (chrome.runtime.lastError || res?.ok) {
+            onLoggedIn(token, name, email);
+            return;
+          }
+          // Rejected as older than an existing session — adopt the winner
+          // rather than holding a token nothing else will send.
+          chrome.runtime.sendMessage({ action: 'getActiveToken' }, (r?: { token?: string | null }) => {
+            onLoggedIn(r?.token || token, name, email);
+          });
+        }
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
