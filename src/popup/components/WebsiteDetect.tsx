@@ -101,16 +101,16 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
     return (
       <div className="error-state" style={{ gap: 10 }}>
         <div className="error-icon" style={{ background: 'rgba(5,150,105,0.12)', color: 'var(--success)', fontSize: 22 }}>✓</div>
-        <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Analysis saved!</p>
+        <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Analysis queued</p>
         <p className="error-message" style={{ color: 'var(--muted)' }}>
-          View the full company profile and fit score in your Zilvo dashboard.
+          It’s processing in the cloud — it’ll show in your Jobs list, then Companies once done.
         </p>
         <div className="error-actions">
           <button
             className="btn btn--primary"
-            onClick={() => chrome.tabs.create({ url: `${state.baseUrl}/tools/company-intelligence/companies` })}
+            onClick={() => chrome.tabs.create({ url: `${state.baseUrl}/tools/company-intelligence/jobs` })}
           >
-            Open Dashboard
+            View Jobs
           </button>
           <button className="btn btn--secondary" onClick={() => setState({ status: 'idle' })}>
             Analyze Another

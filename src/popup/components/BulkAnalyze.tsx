@@ -167,17 +167,17 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
         <div className="error-state" style={{ gap: 10 }}>
           <div className="error-icon" style={{ background: 'rgba(5,150,105,0.12)', color: 'var(--success)', fontSize: 22 }}>✓</div>
           <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            Bulk analysis complete
+            Bulk analysis queued
           </p>
           <p className="error-message" style={{ color: 'var(--muted)' }}>
-            {doneCount} saved{errorCount > 0 ? `, ${errorCount} failed` : ''}.
+            {doneCount} queued{errorCount > 0 ? `, ${errorCount} failed` : ''}.
           </p>
           <div className="error-actions">
             <button
               className="btn btn--primary"
-              onClick={() => chrome.tabs.create({ url: `${baseUrl}/tools/company-intelligence/companies` })}
+              onClick={() => chrome.tabs.create({ url: `${baseUrl}/tools/company-intelligence/jobs` })}
             >
-              Open Dashboard
+              View Jobs
             </button>
             <button className="btn btn--secondary" onClick={handleReset}>Analyze More</button>
           </div>
