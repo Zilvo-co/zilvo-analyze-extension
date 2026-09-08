@@ -31,7 +31,8 @@
         "https://app.zilvo.co/*",
         "https://zilvo.co/*",
         "https://www.zilvo.co/*",
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
       ],
       "js": ["zilvoSync.js"],
       "run_at": "document_idle"
@@ -52,6 +53,7 @@
     "https://app.zilvo.co/*",
     "https://api.zilvo.co/*",
     "http://localhost:3000/*",
+    "http://localhost:3001/*",
     "<all_urls>"
   ]
 }

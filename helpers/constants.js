@@ -1,16 +1,18 @@
 /**
  * helpers/constants.js
- * Common constant configurations for the extension.
+ *
+ * Re-export only. Every Zilvo URL lives in ../shared/zilvo-urls.js, which the
+ * React extension under src/ reads too — edit the environment THERE, not here.
+ * This file exists so the legacy extension's existing imports keep working.
  */
-
-// ZILVO_API — where the REST API lives (fetch calls only).
-// ZILVO_APP — where the web app lives (login, signup, dashboards): every URL
-//             that gets OPENED IN A TAB. These are DIFFERENT hosts; opening a
-//             page on the API host is a 404.
-// For local dev point both at 'http://localhost:3000'.
-
-// export const ZILVO_API = 'http://localhost:3000';
-export const ZILVO_API = 'https://api.zilvo.co';
-
-// export const ZILVO_APP = 'http://localhost:3000';
-export const ZILVO_APP = 'https://app.zilvo.co';
+export {
+  ZILVO_ENV,
+  ZILVO_API,
+  ZILVO_APP,
+  API,
+  APP,
+  apiUrl,
+  appUrl,
+  TOKEN_ORIGINS,
+  TOKEN_COOKIE_DOMAINS,
+} from '../shared/zilvo-urls.js';

@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractWebsiteContent } from '../../content/website';
-import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_APP_DEFAULT } from '../../config';
-import type { CIBackgroundMessage, ExtractedContent } from '../../types';
+import InsufficientCredits from './InsufficientCredits';
+import { canAfford } from '../../utils/credits';
+import { ZILVO_APP_DEFAULT, APP, appUrl } from '../../config';
+import type { CIBackgroundMessage, CreditState, ExtractedContent } from '../../types';
 
-const CI_ANALYZE_FALLBACK_COST = 5;
-
-interface Props {
+interface Props extends CreditState {
   onLogout: () => void;
   userName: string;
 }
@@ -17,23 +16,21 @@ type State =
   | { status: 'success'; baseUrl: string }
   | { status: 'error'; error: string; code?: number; required?: number; remaining?: number };
 
-export default function WebsiteDetect({ onLogout, userName }: Props) {
+export default function WebsiteDetect({ onLogout, userName, credits, creditCost, refreshCredits }: Props) {
   const [state,      setState]      = useState<State>({ status: 'idle' });
   const [pageUrl,    setPageUrl]    = useState('');
   const [tabId,      setTabId]      = useState<number | null>(null);
   const [manualUrl,  setManualUrl]  = useState('');
   const [baseUrl,    setBaseUrl]    = useState(ZILVO_APP_DEFAULT);
-  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
   const [isValidPage, setIsValidPage] = useState(false);
+
+  // Gates both entry points below — the detected page and the manual URL box.
+  const affordable = canAfford(credits, creditCost);
 
   useEffect(() => {
     chrome.storage.local.get({ zilvoAppUrl: ZILVO_APP_DEFAULT }, items => {
       setBaseUrl(items.zilvoAppUrl as string);
     });
-    // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
-    getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)
-      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
-      .catch(() => {});
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const tab = tabs[0];
       const url = tab?.url || '';
@@ -49,6 +46,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
         setState({ status: 'loading', step: message.step, message: message.message });
       } else if (message.type === 'CI_COMPLETE') {
         setState({ status: 'success', baseUrl });
+        refreshCredits(); // credits were just spent — re-read the balance
       } else if (message.type === 'CI_ERROR') {
         setState({
           status: 'error',
@@ -57,15 +55,21 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
           required: message.required,
           remaining: message.remaining,
         });
+        // A 402 means the balance is lower than we thought — re-read it so the
+        // gate engages on the way back instead of offering the button again.
+        if (message.code === 402) refreshCredits();
       }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [baseUrl]);
+  }, [baseUrl, refreshCredits]);
 
   const handleAnalyze = useCallback(async (url: string, fromCurrentTab = false) => {
     const trimmed = url.trim();
     if (!trimmed) return;
+    // Belt and braces: the buttons are disabled when unaffordable, but a stale
+    // render must never be able to start a run that cannot be paid for.
+    if (!canAfford(credits, creditCost)) return;
     const fullUrl = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
     setState({ status: 'loading', step: 'analyzing', message: 'Analyzing website…' });
 
@@ -90,7 +94,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
     }
 
     chrome.runtime.sendMessage({ type: 'ANALYZE_FOR_CI', websiteUrl: fullUrl, pageContent, userInputField: fullUrl });
-  }, [tabId]);
+  }, [tabId, credits, creditCost]);
 
   const authStrip = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -123,7 +127,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
         <div className="error-actions">
           <button
             className="btn btn--primary"
-            onClick={() => chrome.tabs.create({ url: `${state.baseUrl}/tools/company-intelligence/companies` })}
+            onClick={() => chrome.tabs.create({ url: appUrl(APP.companies, state.baseUrl) })}
           >
             Open Dashboard
           </button>
@@ -152,7 +156,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
           <p className="error-message">{outOfCredits ? creditsMsg : state.error}</p>
           <div className="error-actions">
             {outOfCredits && (
-              <button className="btn btn--primary" onClick={() => chrome.tabs.create({ url: `${baseUrl}/billing` })}>
+              <button className="btn btn--primary" onClick={() => chrome.tabs.create({ url: appUrl(APP.billing, baseUrl) })}>
                 Buy Credits
               </button>
             )}
@@ -176,6 +180,10 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
         <span style={{ fontSize: 11, color: 'var(--primary)' }}>💳</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{creditCost} credits per analysis · Results saved to your dashboard</span>
       </div>
+
+      {!affordable && (
+        <InsufficientCredits credits={credits} creditCost={creditCost} baseUrl={baseUrl} />
+      )}
 
       {/* Current page quick-analyze */}
       {isValidPage && (
@@ -211,6 +219,7 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
           <button
             className="btn btn--primary"
             style={{ padding: '9px 16px', fontSize: 13 }}
+            disabled={!affordable}
             onClick={() => handleAnalyze(pageUrl, true)}
           >
             Analyze Company
@@ -228,12 +237,12 @@ export default function WebsiteDetect({ onLogout, userName }: Props) {
             placeholder="https://example.com"
             value={manualUrl}
             onChange={e => setManualUrl(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && manualUrl.trim()) handleAnalyze(manualUrl, false); }}
+            onKeyDown={e => { if (e.key === 'Enter' && manualUrl.trim() && affordable) handleAnalyze(manualUrl, false); }}
           />
           <button
             className="btn btn--secondary"
             style={{ width: 'auto', padding: '8px 12px', flexShrink: 0 }}
-            disabled={!manualUrl.trim()}
+            disabled={!manualUrl.trim() || !affordable}
             onClick={() => handleAnalyze(manualUrl, false)}
           >
             Go

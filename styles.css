@@ -697,8 +697,20 @@ body {
 .bulk-result-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   font-size: 11px;
+}
+
+/* Failure reason, on its own line under the URL it belongs to. */
+.bulk-item-reason {
+  flex: 0 0 100%;
+  margin-left: 14px;
+  color: var(--color-error);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .bulk-status-dot {

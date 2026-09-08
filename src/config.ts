@@ -1,24 +1,25 @@
 // ── Backend + web app URLs ───────────────────────────────────────────────────
-// ZILVO_API_DEFAULT — where the REST API lives (fetch calls only).
-// ZILVO_APP_DEFAULT — where the web app lives (login, billing, dashboard links,
-//                     and the origin that owns the auth token).
-// These are DIFFERENT hosts. Opening a page on the API host gives a 404, and
-// reading a token from anywhere but the app host is how stale sessions leak in.
-// For local dev point both at 'http://localhost:3000'.
-export const ZILVO_API_DEFAULT = 'https://api.zilvo.co';
-export const ZILVO_APP_DEFAULT = 'https://app.zilvo.co';
+// Values live in ONE place: shared/zilvo-urls.js, which the legacy extension at
+// the repo root loads too. Change the environment there, not here.
+//
+// This module adds only what the React build needs on top: the chrome.storage
+// overrides that let a user point the extension at a different host from
+// Settings, and the app-origin rule the token resolver depends on.
+export {
+  ZILVO_ENV,
+  API,
+  APP,
+  apiUrl,
+  appUrl,
+  TOKEN_ORIGINS,
+  TOKEN_COOKIE_DOMAINS,
+} from '../shared/zilvo-urls.js';
 
-// Every origin that has ever stored a Zilvo token. Purged on reset/logout so no
-// legacy host can hand an old session back to the extension.
-export const TOKEN_ORIGINS = [
-  'https://app.zilvo.co/*',
-  'https://zilvo.co/*',
-  'https://www.zilvo.co/*',
-  'http://localhost:3000/*',
-];
+import { ZILVO_API, ZILVO_APP } from '../shared/zilvo-urls.js';
 
-// Cookie domains matching TOKEN_ORIGINS.
-export const TOKEN_COOKIE_DOMAINS = ['zilvo.co', 'www.zilvo.co', 'app.zilvo.co', 'api.zilvo.co'];
+/** Defaults for the chrome.storage overrides below. */
+export const ZILVO_API_DEFAULT = ZILVO_API;
+export const ZILVO_APP_DEFAULT = ZILVO_APP;
 
 // Bump to force every installed extension to purge its tokens once on update.
 // Leaving it unchanged means a normal version bump does NOT log users out.

@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isValidLinkedInCompanyUrl, normalizeLinkedInUrl } from '../../utils/helpers';
-import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_APP_DEFAULT } from '../../config';
-import type { CIBackgroundMessage } from '../../types';
+import InsufficientCredits from './InsufficientCredits';
+import { canAfford, affordableCount } from '../../utils/credits';
+import { ZILVO_APP_DEFAULT, APP, appUrl } from '../../config';
+import type { CIBackgroundMessage, CreditState } from '../../types';
 
-const CI_ANALYZE_FALLBACK_COST = 5;
-
-interface Props {
+interface Props extends CreditState {
   onLogout: () => void;
   userName: string;
 }
@@ -19,28 +18,29 @@ interface BulkItem {
 
 type Mode = 'input' | 'processing' | 'done';
 
-export default function BulkAnalyze({ onLogout, userName }: Props) {
+export default function BulkAnalyze({ onLogout, userName, credits, creditCost, refreshCredits }: Props) {
   const [mode, setMode]       = useState<Mode>('input');
   const [text, setText]       = useState('');
   const [inputError, setInputError] = useState('');
   const [items, setItems]     = useState<BulkItem[]>([]);
   const [creditsExhausted, setCreditsExhausted] = useState(false);
   const [baseUrl, setBaseUrl] = useState(ZILVO_APP_DEFAULT);
-  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
   const currentIdx            = useRef(0);
   const batchIdRef            = useRef<string>('');
+
+  // A batch needs at least one analysis' worth of credits to be worth starting.
+  const affordable = canAfford(credits, creditCost);
+  // Non-empty lines, counted live so the partial-coverage hint tracks typing.
+  // The exact figure comes from the parse in handleStart; this is close enough
+  // for a warning and avoids normalizing the whole textarea on every keystroke.
+  const lineCount  = text.split('\n').filter(l => l.trim()).length;
+  const covered    = affordableCount(credits, creditCost);
+  const partial    = affordable && lineCount > covered;
 
   useEffect(() => {
     chrome.storage.local.get({ zilvoAppUrl: ZILVO_APP_DEFAULT }, s => {
       setBaseUrl(s.zilvoAppUrl as string);
     });
-  }, []);
-
-  // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
-  useEffect(() => {
-    getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)
-      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
-      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -52,6 +52,7 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
           i === currentIdx.current ? { ...it, message: msg.message } : it
         ));
       } else if (msg.type === 'CI_COMPLETE') {
+        refreshCredits(); // one company's worth of credits was just spent
         setItems(prev => {
           const next = prev.map((it, i) =>
             i === currentIdx.current ? { ...it, status: 'done' as const, message: 'Saved' } : it
@@ -77,7 +78,10 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
         // Out of credits → stop the whole batch; every remaining item would fail
         // the same way. Never auto-retry a 402.
         const outOfCredits = msg.code === 402;
-        if (outOfCredits) setCreditsExhausted(true);
+        if (outOfCredits) {
+          setCreditsExhausted(true);
+          refreshCredits(); // balance is lower than we thought — re-read it
+        }
         setItems(prev => {
           const next = prev.map((it, i) =>
             i === currentIdx.current
@@ -108,9 +112,12 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
 
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [mode]);
+  }, [mode, refreshCredits]);
 
   const handleStart = () => {
+    // Belt and braces: the button is disabled when unaffordable, but a stale
+    // render must never be able to start a batch that cannot be paid for.
+    if (!canAfford(credits, creditCost)) return;
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     const valid  = lines.filter(l => isValidLinkedInCompanyUrl(l)).map(l => normalizeLinkedInUrl(l));
     const unique = [...new Set(valid)];
@@ -171,6 +178,20 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{creditCost} credits per company · Results saved to your dashboard</span>
         </div>
 
+        {!affordable && (
+          <InsufficientCredits
+            credits={credits}
+            creditCost={creditCost}
+            baseUrl={baseUrl}
+            message={
+              <>
+                Not enough credits to analyze even one company. Each costs{' '}
+                <strong>{creditCost}</strong> and you have <strong>{credits ?? 0}</strong>.
+              </>
+            }
+          />
+        )}
+
         <div>
           <label className="form-label">LinkedIn Company URLs</label>
           <textarea
@@ -191,8 +212,13 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
           <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>
             One LinkedIn company URL per line. Each costs {creditCost} credits.
           </p>
+          {partial && (
+            <p style={{ fontSize: 11, color: 'var(--warning, #d97706)', margin: '4px 0 0' }}>
+              Your balance covers {covered} of {lineCount} — the rest will be skipped.
+            </p>
+          )}
         </div>
-        <button className="btn btn--primary" onClick={handleStart} disabled={!text.trim()}>
+        <button className="btn btn--primary" onClick={handleStart} disabled={!text.trim() || !affordable}>
           Analyze All
         </button>
       </div>
@@ -229,14 +255,14 @@ export default function BulkAnalyze({ onLogout, userName }: Props) {
             {creditsExhausted ? (
               <button
                 className="btn btn--primary"
-                onClick={() => chrome.tabs.create({ url: `${baseUrl}/billing` })}
+                onClick={() => chrome.tabs.create({ url: appUrl(APP.billing, baseUrl) })}
               >
                 Buy Credits
               </button>
             ) : (
               <button
                 className="btn btn--primary"
-                onClick={() => chrome.tabs.create({ url: `${baseUrl}/tools/company-intelligence/jobs` })}
+                onClick={() => chrome.tabs.create({ url: appUrl(APP.jobs, baseUrl) })}
               >
                 View in Dashboard
               </button>

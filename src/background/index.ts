@@ -4,7 +4,7 @@ import { classifyCompany } from '../utils/api';
 import { waitForTabComplete, sleep, normalizeLinkedInUrl } from '../utils/helpers';
 import { zilvoFetch, logout as zilvoLogout } from '../utils/zilvoApi';
 import { getActiveToken, clearAllTokens, adoptToken } from '../utils/authToken';
-import { TOKEN_ORIGINS, TOKEN_RESET_VERSION, getAppOrigins } from '../config';
+import { TOKEN_ORIGINS, TOKEN_RESET_VERSION, getAppOrigins, API } from '../config';
 import type { AppSettings, ClassificationResult, LinkedInData, ExtractedContent, ProgressStep } from '../types';
 
 const LINKEDIN_RENDER_DELAY = 3_500;
@@ -144,7 +144,7 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
   // credits) as typed errors.
   sendCIProgress('analyzing', 'Analyzing company with AI…');
   const saved = await zilvoFetch<{ jobId: string }>(
-    '/api/company-intelligence/analyze',
+    API.analyze,
     {
       method: 'POST',
       body: JSON.stringify({

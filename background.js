@@ -13,7 +13,7 @@
  */
 
 import { sleep, normalizeLinkedInUrl } from './helpers/utils.js';
-import { ZILVO_API } from './helpers/constants.js';
+import { API, apiUrl } from './helpers/constants.js';
 
 // Open the side panel (right-side panel) when the toolbar icon is clicked.
 // Falls back silently in environments where the sidePanel API isn't available.
@@ -77,6 +77,11 @@ async function autoScrapeLinkedInPage(tabId, url) {
   _recentlyScraped.set(canonicalUrl, Date.now());
 
   const result = await analyzeLinkedInCompany(tabId, auth.token, canonicalUrl);
+
+  // Only a SUCCESSFUL run earns the cooldown. Keeping it after a failure meant
+  // the stored ERROR was replayed into the panel on every open, and no reload
+  // could retry for five minutes.
+  if (!result.success) _recentlyScraped.delete(canonicalUrl);
 
   if (result.success) {
     _setBadge(tabId, '✓', '#4caf50');
@@ -238,7 +243,7 @@ function broadcast(data) {
 
 async function zilvoLogin(email, password) {
   try {
-    const res = await fetch(`${ZILVO_API}/api/auth/login`, {
+    const res = await fetch(apiUrl(API.login), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ email, password }),
@@ -299,24 +304,78 @@ async function getTabDetection() {
   }
 }
 
-async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
-  let liData;
+/** `https://www.linkedin.com/company/<slug>/about/` for any company URL. */
+function aboutUrlFor(url) {
+  const m = (url || '').match(/linkedin\.com\/company\/([a-zA-Z0-9\-_.%]+)/);
+  return m ? `https://www.linkedin.com/company/${m[1].replace(/\/$/, '')}/about/` : null;
+}
+
+function isAboutView(url) {
+  return /\/company\/[^/]+\/about\/?$/.test((url || '').replace(/[?#].*$/, ''));
+}
+
+/** Runs the extractor inside an already-open tab. */
+async function extractFromTab(tabId) {
   try {
-    const [result] = await chrome.scripting.executeScript({
+    const [res] = await chrome.scripting.executeScript({
       target: { tabId, allFrames: false },
       func:   linkedInCIExtractorFn,
     });
-    liData = result?.result;
-  } catch {
-    return { success: false, error: 'Could not read the LinkedIn page. Make sure it is fully loaded.' };
+    return res?.result ?? null;
+  } catch (err) {
+    console.warn('[Zilvo] executeScript on tab', tabId, 'failed:', err.message);
+    return null;
+  }
+}
+
+/** Opens the About view in a background tab and extracts from there. */
+async function extractFromAboutTab(aboutUrl) {
+  let tabId = null;
+  try {
+    const tab = await chrome.tabs.create({ url: aboutUrl, active: false });
+    tabId = tab.id;
+    _managedTabIds.add(tabId); // keep auto-scrape off a tab we opened
+    await Promise.race([
+      waitForTabLoad(tabId, LINKEDIN_LOAD_TIMEOUT).catch(() => {}),
+      sleep(10_000),
+    ]);
+    await sleep(LINKEDIN_RENDER_DELAY);
+    return await extractFromTab(tabId);
+  } catch (err) {
+    console.warn('[Zilvo] About-tab extraction failed:', err.message);
+    return null;
+  } finally {
+    if (tabId) { _managedTabIds.delete(tabId); await safeCloseTab(tabId); }
+  }
+}
+
+async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
+  let liData = await extractFromTab(tabId);
+
+  if (!liData) return { success: false, error: 'Could not read the LinkedIn page. Make sure it is fully loaded.' };
+
+  // The Website field only exists on the /about/ view. Auto-scrape fires when
+  // the company HOME tab reaches "complete", so the extractor ran against a DOM
+  // that never contained a website — and we told the user the company had not
+  // listed one while their screen showed it. Check /about/ before believing it.
+  if (!liData.websiteUrl && !isAboutView(liData.linkedinUrl)) {
+    const aboutUrl = aboutUrlFor(liData.linkedinUrl || userInputField);
+    if (aboutUrl) {
+      console.log('[Zilvo] no website on', liData.linkedinUrl, '— retrying on', aboutUrl);
+      const retry = await extractFromAboutTab(aboutUrl);
+      if (retry?.websiteUrl) {
+        liData = { ...liData, ...retry, linkedinUrl: liData.linkedinUrl };
+      }
+    }
   }
 
-  if (!liData) return { success: false, error: 'Failed to extract LinkedIn data.' };
-
   if (!liData.websiteUrl) {
+    // Dump what the page actually looked like, so the next failure explains
+    // itself instead of needing another round of guessing at selectors.
+    console.error('[Zilvo] website extraction failed —', liData.debug || '(no debug payload)');
     return {
       success: false,
-      error:   'No website URL found on this LinkedIn page. The company may not have listed a website.',
+      error:   'No website URL found on this LinkedIn page. Open the company\u2019s About tab and retry, or paste the website URL in the Website tab.',
     };
   }
 
@@ -363,10 +422,12 @@ async function scrapeWebsiteInBackground(url) {
 async function analyzeLinkedInUrl(linkedinUrl, token, userInputField, batchId) {
   let tabId = null;
   try {
-    // Use base company URL — avoids the /about/ redirect and loads faster in background tabs
+    // Load /about/ directly. The base URL renders the company HOME view, which
+    // does not carry the Website field — extracting from it failed for every
+    // company whose website is only listed on About.
     const match = linkedinUrl.match(/linkedin\.com\/company\/([a-zA-Z0-9\-_.%]+)/);
     if (!match) return { success: false, error: 'Invalid LinkedIn company URL.' };
-    const url = `https://www.linkedin.com/company/${match[1]}/`;
+    const url = `https://www.linkedin.com/company/${match[1].replace(/\/$/, '')}/about/`;
 
     const tab = await chrome.tabs.create({ url, active: false });
     tabId = tab.id;
@@ -418,7 +479,7 @@ async function callZilvoAnalyze({
 }) {
   let res;
   try {
-    res = await fetch(`${ZILVO_API}/api/company-intelligence/analyze`, {
+    res = await fetch(apiUrl(API.analyze), {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
@@ -441,15 +502,60 @@ async function callZilvoAnalyze({
     return { success: false, error: `Cannot reach Zilvo server: ${err.message}` };
   }
 
-  let data;
-  try {
-    data = await res.json();
-  } catch {
-    return { success: false, error: `Server error (HTTP ${res.status}) — unexpected response format.` };
+  // Read the body ONCE as text. Going straight to res.json() meant that any
+  // non-JSON failure (an HTML error page, a proxy 502, an empty body) threw the
+  // whole body away and reported "unexpected response format" with no reason.
+  const raw = await res.text().catch(() => '');
+
+  if (!res.ok) {
+    const error = extractApiError(raw, res.status);
+    console.error(
+      '[Zilvo] analyze failed —', res.status, res.statusText,
+      '\n  url:  ', apiUrl(API.analyze),
+      '\n  body: ', raw.slice(0, 1000) || '(empty)'
+    );
+    return { success: false, error, status: res.status };
   }
 
-  if (!res.ok) return { success: false, error: data.error || `Analysis failed (${res.status})` };
-  return { success: true, jobId: data.jobId, creditsRemaining: data.creditsRemaining };
+  try {
+    const data = JSON.parse(raw);
+    return { success: true, jobId: data.jobId, creditsRemaining: data.creditsRemaining };
+  } catch {
+    console.error('[Zilvo] analyze returned 2xx with an unreadable body:', raw.slice(0, 1000) || '(empty)');
+    return { success: false, error: `Server returned an unreadable response (HTTP ${res.status}).`, status: res.status };
+  }
+}
+
+/**
+ * Pull a human-readable reason out of an API error body.
+ *
+ * The old code only read `data.error`, so any other shape ({ message }, a
+ * nested { error: { message } }, a validation { errors: [...] }) silently
+ * became a bare "Analysis failed (500)". When the body is not JSON at all the
+ * raw text is far more useful than a generic sentence, so a trimmed snippet is
+ * surfaced instead of being discarded.
+ */
+function extractApiError(raw, status) {
+  const text = (raw || '').trim();
+  if (!text) return `Analysis failed (HTTP ${status}) — the server returned an empty response.`;
+
+  try {
+    const data = JSON.parse(text);
+    const reason =
+      (typeof data?.error === 'string' ? data.error : null) ||
+      data?.error?.message ||
+      data?.message ||
+      data?.detail ||
+      (Array.isArray(data?.errors)
+        ? data.errors.map(e => e?.message || e).filter(Boolean).join('; ')
+        : null);
+    if (reason) return String(reason);
+    return `Analysis failed (HTTP ${status}) — ${text.slice(0, 300)}`;
+  } catch {
+    // Not JSON: an HTML error page, a proxy message, a stack trace.
+    const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return `Analysis failed (HTTP ${status}) — ${plain.slice(0, 300)}`;
+  }
 }
 
 /**
@@ -505,14 +611,28 @@ function websiteContentExtractorFn() {
  */
 function linkedInCIExtractorFn() {
   function decodeTrackingUrl(url) {
+    // LinkedIn wraps outbound links in a redirector and has changed its shape
+    // more than once: l.linkedin.com/?url=, /redir/redirect?url=, and now
+    // /safety/go?url= (the SDUI About page). Matching on specific paths meant
+    // an unrecognised wrapper stayed a linkedin.com URL, so isExternal()
+    // rejected it and the company's website looked absent. Unwrap ANY
+    // linkedin.com URL carrying a `url` parameter, repeatedly.
     try {
-      const p = new URL(url);
-      if (p.hostname === 'l.linkedin.com') return decodeURIComponent(p.searchParams.get('url') || url);
-      if (p.hostname.endsWith('linkedin.com') && p.pathname === '/redir/redirect') {
-        const t = p.searchParams.get('url');
-        if (t) return decodeURIComponent(t);
+      let current = url;
+      for (let i = 0; i < 3; i++) {
+        const p = new URL(current);
+        if (!p.hostname.endsWith('linkedin.com')) break;
+        let target = p.searchParams.get('url') || p.searchParams.get('redirect');
+        if (!target) break;
+        // searchParams already percent-decodes; only decode again when the
+        // wrapper double-encoded it. Decoding twice corrupts %-escapes.
+        if (!/^https?:\/\//i.test(target)) {
+          try { target = decodeURIComponent(target); } catch { /* leave as-is */ }
+        }
+        if (!/^https?:\/\//i.test(target) || target === current) break;
+        current = target;
       }
-      return url;
+      return current;
     } catch { return url; }
   }
 
@@ -620,10 +740,43 @@ function linkedInCIExtractorFn() {
     }
   }
 
+  // ── DOM fallback: the "Website" field shown on the About tab ─────────────────
+  // LinkedIn renders it as a PLAIN external anchor:
+  //   <dt>Website</dt><dd><a href="https://news.microsoft.com/">…</a></dd>
+  // Nothing above sees that. The <code> Voyager blocks are absent on the modern
+  // app shell, JSON-LD carries the LinkedIn URL rather than the company's, and
+  // the tracking-link scan below only accepts l.linkedin.com / redir hrefs — so
+  // a page plainly showing a website still reported "no website URL found".
+  if (!websiteUrl) {
+    // The label is NOT always a <dt>/<h3>. LinkedIn's current About page is
+    // server-driven (isSdui=true) with obfuscated class names and renders
+    //   <div><div><p>Website</p></div><div><a href=…><p>https://…</p></a></div></div>
+    // so the anchor is not a sibling of the label — it is a sibling of the
+    // label's WRAPPER. Match the label by text, then climb.
+    const labels = [...document.querySelectorAll('dt, h3, h4, p, span, .text-heading-small')]
+      .filter(el => /^website$/i.test((el.textContent || '').trim()));
+
+    for (const label of labels) {
+      let node = label;
+      for (let up = 0; up < 4 && node && !websiteUrl; up++) {
+        let sib = node.nextElementSibling;
+        for (let n = 0; sib && n < 3 && !websiteUrl; n++) {
+          for (const a of sib.querySelectorAll('a[href]')) {
+            const href = decodeTrackingUrl(a.href);
+            if (isExternal(href) && !SOCIAL.test(href)) { websiteUrl = href; break; }
+          }
+          sib = sib.nextElementSibling;
+        }
+        node = node.parentElement;
+      }
+      if (websiteUrl) break;
+    }
+  }
+
   // ── Tracking link fallback: website ──────────────────────────────────────────
   if (!websiteUrl) {
     const links = [...document.querySelectorAll(
-      'a[href*="l.linkedin.com/l.php"], a[href*="/redir/redirect"]'
+      'a[href*="l.linkedin.com"], a[href*="/redir/redirect"], a[href*="/safety/go"], a[href*="url="]'
     )];
     for (const a of links) {
       if (/about_website|website|homepage/i.test(a.href)) {
@@ -639,6 +792,40 @@ function linkedInCIExtractorFn() {
     }
   }
 
+  // ── Last resort: an anchor whose visible TEXT is a URL ───────────────────────
+  // On the About tab the website link's label is the URL itself. That is a
+  // strong signal, and keying on it avoids grabbing sponsored or nav links.
+  if (!websiteUrl) {
+    const URLISH = /^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i;
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (!URLISH.test((a.textContent || '').trim())) continue;
+      const href = decodeTrackingUrl(a.href);
+      if (isExternal(href) && !SOCIAL.test(href)) { websiteUrl = href; break; }
+    }
+  }
+
+  // When nothing was found, report what the page actually looked like. Without
+  // this a failure is indistinguishable from "the company has no website".
+  let debug;
+  if (!websiteUrl) {
+    const externals = [...new Set([...document.querySelectorAll('a[href]')]
+      .map(a => a.href)
+      .filter(h => isExternal(h)))];
+    debug = {
+      url:           location.href,
+      title:         document.title,
+      anchors:       document.querySelectorAll('a[href]').length,
+      trackingLinks: document.querySelectorAll('a[href*="l.linkedin.com/l.php"], a[href*="/redir/redirect"]').length,
+      codeBlocks:    document.querySelectorAll('code').length,
+      ldJson:        document.querySelectorAll('script[type="application/ld+json"]').length,
+      labels:        [...document.querySelectorAll('dt, h3, .text-heading-small')]
+                       .map(e => (e.textContent || '').trim())
+                       .filter(t => t && t.length < 40)
+                       .slice(0, 25),
+      externalHrefs: externals.slice(0, 15),
+    };
+  }
+
   return {
     companyName:   companyName   || null,
     linkedinUrl:   location.href,
@@ -646,5 +833,6 @@ function linkedInCIExtractorFn() {
     employeeCount: employeeCount || null,
     followerCount: followerCount || null,
     websiteUrl:    websiteUrl    || null,
+    debug,
   };
 }

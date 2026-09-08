@@ -8,7 +8,7 @@
 
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
-import { ZILVO_APP } from './helpers/constants.js';
+import { APP, appUrl } from './helpers/constants.js';
 
 const $ = id => document.getElementById(id);
 
@@ -44,9 +44,24 @@ function switchTab(name) {
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// /login is a web page on the app host, not an API route — ZILVO_API here
-// sent users to https://api.zilvo.co/login, which 404s.
-const ZILVO_LOGIN_URL = `${ZILVO_APP}/login`;
+// /login is a web page on the app host, not an API route — using the API base
+// here sent users to https://api.zilvo.co/login, which 404s.
+const ZILVO_LOGIN_URL = appUrl(APP.login);
+
+/**
+ * Point every [data-zilvo-link] anchor at the configured app host.
+ *
+ * These used to be absolute https://zilvo.co/... hrefs baked into popup.html,
+ * so they ignored the configured environment entirely — pointing at production
+ * while everything else talked to localhost, and at the marketing host rather
+ * than the app host even in production.
+ */
+function applyZilvoLinks() {
+  for (const el of document.querySelectorAll('[data-zilvo-link]')) {
+    const path = APP[el.dataset.zilvoLink];
+    if (path) el.href = appUrl(path);
+  }
+}
 
 const authOverlay  = $('auth-overlay');
 const loginBtn     = $('login-btn');
@@ -234,7 +249,7 @@ async function handleLiAnalyze(overrideUrl) {
   }
 
   setLiAnalyzeState(true);
-  const result = await chrome.runtime.sendMessage(message);
+  const result = await requestAnalyze(message);
   setLiAnalyzeState(false);
 
   if (result.success) {
@@ -243,8 +258,37 @@ async function handleLiAnalyze(overrideUrl) {
     // Update button label
     if ($('li-analyze-btn')) $('li-analyze-text').textContent = 'Re-analyze';
   } else {
-    showLiResult('error', result.error || 'Analysis failed. Please try again.');
+    showLiResult('error', analyzeErrorText(result));
   }
+}
+
+/**
+ * Send an analyze request and ALWAYS come back with a result object.
+ *
+ * chrome.runtime.sendMessage rejects when the MV3 service worker is torn down
+ * mid-request, and resolves `undefined` when no listener replies. Both used to
+ * escape the bare `await` at the call sites: the line that re-enabled the
+ * button never ran, so the spinner span forever and no reason was ever shown.
+ */
+async function requestAnalyze(message) {
+  try {
+    const result = await chrome.runtime.sendMessage(message);
+    if (!result) {
+      console.error('[Zilvo] analyze: no response from background for', message.action);
+      return { success: false, error: 'The extension background stopped responding. Reopen the panel and try again.' };
+    }
+    if (!result.success) console.error('[Zilvo] analyze failed:', result);
+    return result;
+  } catch (err) {
+    console.error('[Zilvo] analyze request failed:', err);
+    return { success: false, error: err?.message || 'Could not reach the extension background.' };
+  }
+}
+
+/** Failure text for the UI: the reason, plus the HTTP status when there is one. */
+function analyzeErrorText(result) {
+  const reason = result?.error || 'Analysis failed. Please try again.';
+  return result?.status ? `${reason} (HTTP ${result.status})` : reason;
 }
 
 function setLiAnalyzeState(on) {
@@ -337,7 +381,7 @@ async function handleWebAnalyze(overrideUrl) {
   }
 
   setWebAnalyzeState(true);
-  const result = await chrome.runtime.sendMessage({
+  const result = await requestAnalyze({
     action:      'ANALYZE_WEBSITE',
     websiteUrl,
     linkedinUrl,
@@ -351,7 +395,7 @@ async function handleWebAnalyze(overrideUrl) {
     updateCreditsDisplay(result.creditsRemaining);
     showWebResult('success', 'Analysis started! View results in your Zilvo Dashboard.');
   } else {
-    showWebResult('error', result.error || 'Analysis failed. Please try again.');
+    showWebResult('error', analyzeErrorText(result));
   }
 }
 
@@ -486,33 +530,101 @@ function parseUrlsFromCsv(text) {
   return [...new Set(urls)]; // deduplicate
 }
 
+// The `accept` attribute on the file input is only a hint — the OS picker lets
+// the user switch to "All files" and choose anything. An .xlsx picked that way
+// used to be read as text, match zero URLs, and report NOTHING: the skipped
+// count was 0, so no message was shown and the preview simply stayed hidden.
+const CSV_EXTENSIONS         = ['.csv', '.txt'];
+const SPREADSHEET_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb', '.ods', '.numbers'];
+const MAX_CSV_BYTES          = 2 * 1024 * 1024; // 2 MB
+
+/** Why this file cannot be parsed, or null when it can be. */
+function csvRejectionReason(file) {
+  const name = (file.name || '').toLowerCase();
+
+  if (SPREADSHEET_EXTENSIONS.some(ext => name.endsWith(ext))) {
+    return 'Excel files aren\u2019t supported. In Excel choose File → Save As → CSV, then upload the .csv.';
+  }
+  if (!CSV_EXTENSIONS.some(ext => name.endsWith(ext))) {
+    return 'Unsupported file type. Upload a .csv file with one URL per row.';
+  }
+  if (file.size === 0) {
+    return 'That file is empty.';
+  }
+  if (file.size > MAX_CSV_BYTES) {
+    return `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. Upload a CSV under 2 MB.`;
+  }
+  return null;
+}
+
+/** Report `message` and drop whatever was previously loaded for this list. */
+function failCsvUpload(type, message) {
+  const isLinkedIn = type === 'linkedin';
+  const prefix     = isLinkedIn ? 'li' : 'web';
+
+  if (isLinkedIn) _bulkLinkedInUrls = [];
+  else            _bulkWebsiteUrls  = [];
+
+  renderBulkPreview(prefix, [], isLinkedIn ? 'LinkedIn' : 'website');
+  $(`${prefix}-csv-clear-btn`).classList.add('hidden');
+  $(`${prefix}-csv-error`).textContent = message;
+  updateBulkRunBtn();
+}
+
 function handleCsvUpload(e, type) {
-  const file = e.target.files[0];
+  const input = e.target;
+  const file  = input.files[0];
+  // Clear the selection so re-picking the SAME filename fires `change` again —
+  // otherwise a user who fixes their file and re-uploads it sees nothing happen.
+  input.value = '';
   if (!file) return;
 
   const isLinkedIn = type === 'linkedin';
-  const errorEl    = $(isLinkedIn ? 'li-csv-error' : 'web-csv-error');
+  const prefix     = isLinkedIn ? 'li' : 'web';
+  const errorEl    = $(`${prefix}-csv-error`);
   errorEl.textContent = '';
+
+  const rejection = csvRejectionReason(file);
+  if (rejection) { failCsvUpload(type, rejection); return; }
 
   const reader = new FileReader();
   reader.onload = ev => {
     const allUrls = parseUrlsFromCsv(ev.target.result);
 
-    if (isLinkedIn) {
-      _bulkLinkedInUrls = allUrls.filter(u => isValidLinkedInCompanyUrl(u));
-      const skipped = allUrls.length - _bulkLinkedInUrls.length;
-      if (skipped > 0) errorEl.textContent = `${skipped} row(s) skipped — not valid LinkedIn company URLs.`;
-      renderBulkPreview('li', _bulkLinkedInUrls, 'LinkedIn');
-    } else {
-      _bulkWebsiteUrls = allUrls.filter(u => u.startsWith('http'));
-      const skipped = allUrls.length - _bulkWebsiteUrls.length;
-      if (skipped > 0) errorEl.textContent = `${skipped} row(s) skipped — not valid URLs.`;
-      renderBulkPreview('web', _bulkWebsiteUrls, 'website');
+    // Nothing URL-shaped anywhere in the file — a wrong file, a header-only
+    // export, or a column of bare domains with no scheme.
+    if (allUrls.length === 0) {
+      failCsvUpload(type, 'No URLs found in this file. Each row needs a full URL starting with http:// or https://.');
+      return;
     }
 
+    const valid = isLinkedIn
+      ? allUrls.filter(u => isValidLinkedInCompanyUrl(u))
+      : allUrls.filter(u => u.startsWith('http'));
+
+    if (isLinkedIn) _bulkLinkedInUrls = valid;
+    else            _bulkWebsiteUrls  = valid;
+
+    // URLs were found but none survived validation — say so instead of leaving
+    // an empty preview and a hidden Analyze button to explain themselves.
+    if (valid.length === 0) {
+      failCsvUpload(type, isLinkedIn
+        ? `Found ${allUrls.length} URL(s), but none are LinkedIn company URLs (linkedin.com/company/…).`
+        : `Found ${allUrls.length} URL(s), but none are valid website URLs.`);
+      return;
+    }
+
+    const skipped = allUrls.length - valid.length;
+    if (skipped > 0) {
+      errorEl.textContent = isLinkedIn
+        ? `${skipped} row(s) skipped — not valid LinkedIn company URLs.`
+        : `${skipped} row(s) skipped — not valid URLs.`;
+    }
+
+    renderBulkPreview(prefix, valid, isLinkedIn ? 'LinkedIn' : 'website');
     updateBulkRunBtn();
   };
-  reader.onerror = () => { errorEl.textContent = 'Failed to read file.'; };
+  reader.onerror = () => failCsvUpload(type, 'Could not read that file. Upload a .csv saved as plain text.');
   reader.readAsText(file);
 }
 
@@ -616,18 +728,15 @@ async function handleBulkAnalyze() {
     itemEl.querySelector('.bulk-item-badge').textContent = 'Analyzing…';
     itemEl.scrollIntoView({ block: 'nearest' });
 
-    let result;
-    try {
-      if (job.type === 'linkedin') {
-        result = await chrome.runtime.sendMessage({
+    const result = job.type === 'linkedin'
+      ? await requestAnalyze({
           action:        'ANALYZE_COMPANY_URL',
           linkedinUrl:   job.url,
           token:         auth.token,
           userInputField: job.url,
           batchId,
-        });
-      } else {
-        result = await chrome.runtime.sendMessage({
+        })
+      : await requestAnalyze({
           action:        'ANALYZE_WEBSITE',
           websiteUrl:    job.url,
           linkedinUrl:   null,
@@ -636,10 +745,6 @@ async function handleBulkAnalyze() {
           userInputField: job.url,
           batchId,
         });
-      }
-    } catch (err) {
-      result = { success: false, error: err.message };
-    }
 
     done++;
     $('bulk-progress-fill').style.width  = `${Math.round((done / jobs.length) * 100)}%`;
@@ -654,7 +759,14 @@ async function handleBulkAnalyze() {
       itemEl.querySelector('.bulk-status-dot').className   = 'bulk-status-dot bulk-dot-error';
       itemEl.querySelector('.bulk-item-badge').className   = 'bulk-item-badge bulk-badge-error';
       itemEl.querySelector('.bulk-item-badge').textContent = 'Error';
-      itemEl.title = result.error || 'Analysis failed';
+      // The reason used to live only in the row's `title`, so it was invisible
+      // unless you hovered. Put it on a second line under the URL.
+      const reason = analyzeErrorText(result);
+      const reasonEl = document.createElement('span');
+      reasonEl.className  = 'bulk-item-reason';
+      reasonEl.textContent = reason;
+      itemEl.appendChild(reasonEl);
+      itemEl.title = reason;
     }
   }
 
@@ -664,7 +776,7 @@ async function handleBulkAnalyze() {
   $('bulk-run-text').textContent       = `Analyze All (${jobs.length})`;
   
   // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
-  $('bulk-dashboard-link').href = `${ZILVO_APP}/tools/company-intelligence/jobs`;
+  $('bulk-dashboard-link').href = appUrl(APP.jobs);
   $('bulk-dashboard-link').classList.remove('hidden');
 }
 
@@ -695,6 +807,7 @@ function initTabWatcher() {
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 (async () => {
+  applyZilvoLinks();
   initTabBar();
   initManualTab();
   initTabWatcher();

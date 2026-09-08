@@ -4,12 +4,28 @@ import type { LinkedInData } from '../types';
 // Must not reference any module-level variables or imports at runtime.
 export function extractLinkedInData(): LinkedInData {
   function decodeTrackingUrl(url: string): string {
+    // LinkedIn wraps outbound links in a redirector and has changed its shape
+    // more than once: l.linkedin.com/?url=, /redir/redirect?url=, and now
+    // /safety/go?url= (the SDUI About page). Matching on specific paths meant
+    // an unrecognised wrapper stayed a linkedin.com URL, so isExternal()
+    // rejected it and the company's website looked absent. Unwrap ANY
+    // linkedin.com URL carrying a `url` parameter, repeatedly.
     try {
-      const p = new URL(url);
-      if (p.hostname === 'l.linkedin.com') {
-        return decodeURIComponent(p.searchParams.get('url') || url);
+      let current = url;
+      for (let i = 0; i < 3; i++) {
+        const p = new URL(current);
+        if (!p.hostname.endsWith('linkedin.com')) break;
+        let target = p.searchParams.get('url') || p.searchParams.get('redirect');
+        if (!target) break;
+        // searchParams already percent-decodes; only decode again when the
+        // wrapper double-encoded it. Decoding twice corrupts %-escapes.
+        if (!/^https?:\/\//i.test(target)) {
+          try { target = decodeURIComponent(target); } catch { /* leave as-is */ }
+        }
+        if (!/^https?:\/\//i.test(target) || target === current) break;
+        current = target;
       }
-      return url;
+      return current;
     } catch { return url; }
   }
 
@@ -46,18 +62,24 @@ export function extractLinkedInData(): LinkedInData {
     if (isExternal(href)) return { companyName, websiteUrl: href };
   }
 
-  // Strategy 3: dt "Website" label → sibling dd
-  for (const dt of document.querySelectorAll('dt')) {
-    if (/^website$/i.test(dt.textContent?.trim() ?? '')) {
-      let sib = dt.nextElementSibling;
-      while (sib && sib.tagName !== 'DT') {
-        const a = sib.querySelector('a[href]') as HTMLAnchorElement | null;
-        if (a) {
+  // Strategy 3: a "Website" label → the link in the following sibling block.
+  // Not always <dt>/<dd>. LinkedIn's current About page is server-driven
+  // (isSdui=true) with obfuscated class names and renders
+  //   <div><div><p>Website</p></div><div><a href=…><p>https://…</p></a></div></div>
+  // so the anchor is a sibling of the label's WRAPPER, not of the label itself.
+  for (const label of [...document.querySelectorAll('dt, h3, h4, p, span')]
+         .filter(el => /^website$/i.test(el.textContent?.trim() ?? ''))) {
+    let node: Element | null = label;
+    for (let up = 0; up < 4 && node; up++) {
+      let sib = node.nextElementSibling;
+      for (let n = 0; sib && n < 3; n++) {
+        for (const a of sib.querySelectorAll<HTMLAnchorElement>('a[href]')) {
           const href = decodeTrackingUrl(a.href);
           if (isExternal(href)) return { companyName, websiteUrl: href };
         }
         sib = sib.nextElementSibling;
       }
+      node = node.parentElement;
     }
   }
 
@@ -77,10 +99,28 @@ export function extractLinkedInData(): LinkedInData {
 // Extracts company name, website, industry, employee count, follower count.
 export function extractLinkedInCompanyData(): import('../types').LinkedInCompanyData {
   function decodeTrackingUrl(url: string): string {
+    // LinkedIn wraps outbound links in a redirector and has changed its shape
+    // more than once: l.linkedin.com/?url=, /redir/redirect?url=, and now
+    // /safety/go?url= (the SDUI About page). Matching on specific paths meant
+    // an unrecognised wrapper stayed a linkedin.com URL, so isExternal()
+    // rejected it and the company's website looked absent. Unwrap ANY
+    // linkedin.com URL carrying a `url` parameter, repeatedly.
     try {
-      const p = new URL(url);
-      if (p.hostname === 'l.linkedin.com') return decodeURIComponent(p.searchParams.get('url') || url);
-      return url;
+      let current = url;
+      for (let i = 0; i < 3; i++) {
+        const p = new URL(current);
+        if (!p.hostname.endsWith('linkedin.com')) break;
+        let target = p.searchParams.get('url') || p.searchParams.get('redirect');
+        if (!target) break;
+        // searchParams already percent-decodes; only decode again when the
+        // wrapper double-encoded it. Decoding twice corrupts %-escapes.
+        if (!/^https?:\/\//i.test(target)) {
+          try { target = decodeURIComponent(target); } catch { /* leave as-is */ }
+        }
+        if (!/^https?:\/\//i.test(target) || target === current) break;
+        current = target;
+      }
+      return current;
     } catch { return url; }
   }
 
@@ -121,16 +161,25 @@ export function extractLinkedInCompanyData(): import('../types').LinkedInCompany
     }
   }
   if (!websiteUrl) {
-    for (const dt of document.querySelectorAll('dt')) {
-      if (/^website$/i.test(dt.textContent?.trim() ?? '')) {
-        let sib = dt.nextElementSibling;
-        while (sib && sib.tagName !== 'DT') {
-          const a = sib.querySelector('a[href]') as HTMLAnchorElement | null;
-          if (a) { const href = decodeTrackingUrl(a.href); if (isExternal(href)) { websiteUrl = href; break; } }
+    // See extractLinkedInData: the label is a <p> inside a sibling <div> on the
+    // server-driven About page, so climb from the label instead of assuming <dt>.
+    const labels = [...document.querySelectorAll('dt, h3, h4, p, span')]
+      .filter(el => /^website$/i.test(el.textContent?.trim() ?? ''));
+
+    for (const label of labels) {
+      let node: Element | null = label;
+      for (let up = 0; up < 4 && node && !websiteUrl; up++) {
+        let sib = node.nextElementSibling;
+        for (let n = 0; sib && n < 3 && !websiteUrl; n++) {
+          for (const a of sib.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+            const href = decodeTrackingUrl(a.href);
+            if (isExternal(href)) { websiteUrl = href; break; }
+          }
           sib = sib.nextElementSibling;
         }
-        if (websiteUrl) break;
+        node = node.parentElement;
       }
+      if (websiteUrl) break;
     }
   }
 

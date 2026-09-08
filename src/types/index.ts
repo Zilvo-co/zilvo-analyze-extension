@@ -174,3 +174,18 @@ export type CIBackgroundMessage =
   | CIProgressMessage
   | CICompleteMessage
   | CIErrorMessage;
+
+// ── Credits ───────────────────────────────────────────────────────────────────
+
+/**
+ * Balance + per-analysis cost, owned by App and handed to every analyze tab so
+ * they all gate on the same numbers instead of each fetching their own.
+ */
+export interface CreditState {
+  /** Current balance, or null when it is unknown (not loaded / lookup failed). */
+  credits: number | null;
+  /** Credit cost of one `ci.analyze`. */
+  creditCost: number;
+  /** Re-fetch the balance. Call after an analysis has spent credits. */
+  refreshCredits: () => void;
+}

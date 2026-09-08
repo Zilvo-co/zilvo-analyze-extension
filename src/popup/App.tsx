@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Settings from './components/Settings';
 import AuthLogin from './components/AuthLogin';
 import LinkedInDetect from './components/LinkedInDetect';
 import WebsiteDetect from './components/WebsiteDetect';
 import BulkAnalyze from './components/BulkAnalyze';
-import { getCredits } from '../utils/zilvoApi';
+import { getCredits, getActionCost } from '../utils/zilvoApi';
+import { CI_ANALYZE_ACTION, CI_ANALYZE_FALLBACK_COST } from '../utils/credits';
 
 type ActiveTab = 'linkedin' | 'website' | 'manual';
 
@@ -14,6 +15,7 @@ export default function App() {
   const [zilvoToken, setZilvoToken] = useState('');
   const [zilvoName,  setZilvoName]  = useState('');
   const [credits,    setCredits]    = useState<number | null>(null);
+  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
 
   // Resolve auth on open. The background's getActiveToken() is the single
   // resolver the analyze pipeline uses too, so the credits shown here always
@@ -48,13 +50,26 @@ export default function App() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
-  // Fetch credits from Zilvo backend when logged in
-  useEffect(() => {
+  // The balance every analyze tab gates on. Kept here rather than per-tab so a
+  // spend on one tab is visible on the others, and so switching tabs does not
+  // re-hit the API.
+  const refreshCredits = useCallback(() => {
     if (!zilvoToken) { setCredits(null); return; }
     getCredits(zilvoToken)
-      .then(credits => setCredits(credits))
-      .catch(() => {});
+      .then(balance => setCredits(balance))
+      // Leave it unknown rather than 0 — canAfford() stays permissive on null,
+      // so a blip on /api/credits cannot lock a funded user out of analyzing.
+      .catch(() => setCredits(null));
   }, [zilvoToken]);
+
+  useEffect(() => { refreshCredits(); }, [refreshCredits]);
+
+  // Cost of one analysis, resolved once for the whole popup.
+  useEffect(() => {
+    getActionCost(CI_ANALYZE_ACTION, CI_ANALYZE_FALLBACK_COST)
+      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
+      .catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     // Background calls the API logout and purges storage, every origin's
@@ -104,6 +119,9 @@ export default function App() {
     whiteSpace: 'nowrap' as const,
   });
 
+  const creditState = { credits, creditCost, refreshCredits };
+  const lowBalance = credits !== null && credits < creditCost;
+
   return (
     <div className="app">
       <header className="app-header">
@@ -113,7 +131,14 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {credits !== null && (
-            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: lowBalance ? 'var(--warning, #d97706)' : 'var(--muted)',
+              }}
+              title={lowBalance ? `An analysis costs ${creditCost} credits` : undefined}
+            >
               {credits.toLocaleString()} credits
             </span>
           )}
@@ -129,9 +154,9 @@ export default function App() {
       </div>
 
       <main className="app-main">
-        {activeTab === 'linkedin' && <LinkedInDetect onLogout={handleLogout} userName={zilvoName || 'User'} />}
-        {activeTab === 'website'  && <WebsiteDetect  onLogout={handleLogout} userName={zilvoName || 'User'} />}
-        {activeTab === 'manual'   && <BulkAnalyze    onLogout={handleLogout} userName={zilvoName || 'User'} />}
+        {activeTab === 'linkedin' && <LinkedInDetect onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
+        {activeTab === 'website'  && <WebsiteDetect  onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
+        {activeTab === 'manual'   && <BulkAnalyze    onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
       </main>
     </div>
   );

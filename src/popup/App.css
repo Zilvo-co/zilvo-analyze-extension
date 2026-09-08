@@ -126,7 +126,8 @@ body {
 .btn--primary:hover:not(:disabled) { background: var(--primary-h); }
 .btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--secondary { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); }
-.btn--secondary:hover { background: var(--border); }
+.btn--secondary:hover:not(:disabled) { background: var(--border); }
+.btn--secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Loading ─────────────────────────────────────────── */
 .loading-state {

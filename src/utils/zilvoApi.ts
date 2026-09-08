@@ -1,4 +1,4 @@
-import { getZilvoBaseUrl } from '../config';
+import { getZilvoBaseUrl, API } from '../config';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,6 +75,44 @@ function makeError(
   return err;
 }
 
+/** The error shapes the API is known to return. */
+interface ApiErrorBody {
+  error?: string | { message?: string };
+  message?: string;
+  detail?: string;
+  errors?: Array<{ message?: string } | string>;
+}
+
+/**
+ * Pull a human-readable reason out of an error response.
+ *
+ * Reading only `body.error` dropped every other shape ({ message }, a nested
+ * { error: { message } }, a validation { errors: [...] }), and a body that is
+ * not JSON at all — an HTML error page, a proxy 502, an empty response — was
+ * discarded entirely, leaving a bare "Request failed (500)" to act on.
+ */
+async function readApiError(res: Response): Promise<string> {
+  const text = (await res.text().catch(() => '')).trim();
+  if (!text) return `Request failed (${res.status}) — the server returned an empty response.`;
+
+  try {
+    const data = JSON.parse(text) as ApiErrorBody;
+    const reason =
+      (typeof data.error === 'string' ? data.error : data.error?.message) ||
+      data.message ||
+      data.detail ||
+      (Array.isArray(data.errors)
+        ? data.errors.map(e => (typeof e === 'string' ? e : e?.message)).filter(Boolean).join('; ')
+        : undefined);
+    if (reason) return String(reason);
+    return `Request failed (${res.status}) — ${text.slice(0, 300)}`;
+  } catch {
+    // Not JSON: an HTML error page, a proxy message, a stack trace.
+    const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return `Request failed (${res.status}) — ${plain.slice(0, 300)}`;
+  }
+}
+
 /**
  * Low-level Zilvo API fetch. Resolves the base URL from chrome.storage (via
  * `getZilvoBaseUrl`), sets JSON Content-Type, and adds a Bearer token when given.
@@ -109,8 +147,9 @@ export async function zilvoFetch<T = unknown>(
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw makeError(body.error || `Request failed (${res.status})`, res.status);
+    const message = await readApiError(res);
+    console.error(`[Zilvo] ${init.method ?? 'GET'} ${path} failed — ${res.status}:`, message);
+    throw makeError(message, res.status);
   }
 
   return (await res.json().catch(() => ({}))) as T;
@@ -120,7 +159,7 @@ export async function zilvoFetch<T = unknown>(
 
 /** POST /api/auth/login */
 export async function login(email: string, password: string): Promise<LoginResult> {
-  return zilvoFetch<LoginResult>('/api/auth/login', {
+  return zilvoFetch<LoginResult>(API.login, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
@@ -128,18 +167,18 @@ export async function login(email: string, password: string): Promise<LoginResul
 
 /** GET /api/credits → current credit balance. */
 export async function getCredits(token: string): Promise<number> {
-  const data = await zilvoFetch<{ credits?: number }>('/api/credits', {}, token);
+  const data = await zilvoFetch<{ credits?: number }>(API.credits, {}, token);
   return data.credits ?? 0;
 }
 
 /** GET /api/me → the authenticated user. */
 export async function getMe(token: string): Promise<ZilvoUser> {
-  return zilvoFetch<ZilvoUser>('/api/me', {}, token);
+  return zilvoFetch<ZilvoUser>(API.me, {}, token);
 }
 
 /** GET /api/pricing (public) → catalog of billable actions + sell rate. */
 export async function getPricing(): Promise<PricingResponse> {
-  return zilvoFetch<PricingResponse>('/api/pricing');
+  return zilvoFetch<PricingResponse>(API.pricing);
 }
 
 /**
@@ -159,7 +198,7 @@ export async function getActionCost(action: string, fallback = 0): Promise<numbe
 
 /** POST /api/auth/logout */
 export async function logout(token: string): Promise<void> {
-  await zilvoFetch('/api/auth/logout', { method: 'POST' }, token);
+  await zilvoFetch(API.logout, { method: 'POST' }, token);
 }
 
 /** GET /api/credits/ledger?page=&action= */
@@ -171,7 +210,7 @@ export async function getLedger(
   if (opts.page != null) params.set('page', String(opts.page));
   if (opts.action) params.set('action', opts.action);
   const qs = params.toString();
-  return zilvoFetch<LedgerResponse>(`/api/credits/ledger${qs ? `?${qs}` : ''}`, {}, token);
+  return zilvoFetch<LedgerResponse>(`${API.ledger}${qs ? `?${qs}` : ''}`, {}, token);
 }
 
 /**
@@ -185,7 +224,7 @@ export async function chargeCredits(
   opts: ChargeOptions = {}
 ): Promise<ChargeResult> {
   return zilvoFetch<ChargeResult>(
-    '/api/credits/charge',
+    API.charge,
     {
       method: 'POST',
       body: JSON.stringify({

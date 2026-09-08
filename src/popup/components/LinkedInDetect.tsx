@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractLinkedInCompanyData } from '../../content/linkedin';
-import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_APP_DEFAULT } from '../../config';
-import type { CIBackgroundMessage, LinkedInCompanyData } from '../../types';
+import InsufficientCredits from './InsufficientCredits';
+import { canAfford } from '../../utils/credits';
+import { ZILVO_APP_DEFAULT, APP, appUrl } from '../../config';
+import type { CIBackgroundMessage, CreditState, LinkedInCompanyData } from '../../types';
 
-const CI_ANALYZE_FALLBACK_COST = 5;
-
-interface Props {
+interface Props extends CreditState {
   onLogout: () => void;
   userName: string;
 }
@@ -20,20 +19,18 @@ type State =
   | { status: 'success'; baseUrl: string }
   | { status: 'error'; error: string; code?: number; required?: number; remaining?: number };
 
-export default function LinkedInDetect({ onLogout, userName }: Props) {
+export default function LinkedInDetect({ onLogout, userName, credits, creditCost, refreshCredits }: Props) {
   const [state,   setState]   = useState<State>({ status: 'checking' });
   const [baseUrl, setBaseUrl] = useState(ZILVO_APP_DEFAULT);
-  const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
+
+  // Below one analysis' worth of credits the server would 402 this anyway —
+  // but only after the pipeline has opened a LinkedIn tab and scraped it.
+  const affordable = canAfford(credits, creditCost);
 
   useEffect(() => {
     chrome.storage.local.get({ zilvoAppUrl: ZILVO_APP_DEFAULT }, items => {
       setBaseUrl(items.zilvoAppUrl as string);
     });
-
-    // Fetch the ci.analyze cost once; fall back to 5 so the UI never breaks.
-    getActionCost('ci.analyze', CI_ANALYZE_FALLBACK_COST)
-      .then(cost => setCreditCost(cost || CI_ANALYZE_FALLBACK_COST))
-      .catch(() => {});
 
     chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
       const tab = tabs[0];
@@ -66,6 +63,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
         setState({ status: 'loading', step: message.step, message: message.message });
       } else if (message.type === 'CI_COMPLETE') {
         setState({ status: 'success', baseUrl });
+        refreshCredits(); // credits were just spent — re-read the balance
       } else if (message.type === 'CI_ERROR') {
         setState({
           status: 'error',
@@ -74,13 +72,19 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
           required: message.required,
           remaining: message.remaining,
         });
+        // A 402 means the balance is lower than we thought — re-read it so the
+        // gate engages on the way back instead of offering the button again.
+        if (message.code === 402) refreshCredits();
       }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [baseUrl]);
+  }, [baseUrl, refreshCredits]);
 
   const handleAnalyze = useCallback((liData: LinkedInCompanyData) => {
+    // Belt and braces: the button is disabled when unaffordable, but a stale
+    // render must never be able to start a run that cannot be paid for.
+    if (!canAfford(credits, creditCost)) return;
     setState({ status: 'loading', step: 'analyzing', message: 'Analyzing company…' });
     chrome.runtime.sendMessage({
       type:                  'ANALYZE_FOR_CI',
@@ -94,7 +98,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
       linkedinCity:          liData.city            || undefined,
       userInputField:        liData.linkedinUrl,
     });
-  }, []);
+  }, [credits, creditCost]);
 
   const authStrip = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -155,7 +159,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
         <div className="error-actions">
           <button
             className="btn btn--primary"
-            onClick={() => chrome.tabs.create({ url: `${state.baseUrl}/tools/company-intelligence/companies` })}
+            onClick={() => chrome.tabs.create({ url: appUrl(APP.companies, state.baseUrl) })}
           >
             Open Dashboard
           </button>
@@ -184,7 +188,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
           <p className="error-message">{outOfCredits ? creditsMsg : state.error}</p>
           <div className="error-actions">
             {outOfCredits && (
-              <button className="btn btn--primary" onClick={() => chrome.tabs.create({ url: `${baseUrl}/billing` })}>
+              <button className="btn btn--primary" onClick={() => chrome.tabs.create({ url: appUrl(APP.billing, baseUrl) })}>
                 Buy Credits
               </button>
             )}
@@ -202,6 +206,10 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {authStrip}
+
+      {!affordable && (
+        <InsufficientCredits credits={credits} creditCost={creditCost} baseUrl={baseUrl} />
+      )}
 
       <div style={{ background: 'rgba(10,102,194,0.06)', border: '1.5px solid rgba(10,102,194,0.2)', borderRadius: 10, padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -252,6 +260,7 @@ export default function LinkedInDetect({ onLogout, userName }: Props) {
         <button
           className="btn btn--primary"
           style={{ padding: '9px 16px', fontSize: 13 }}
+          disabled={!affordable}
           onClick={() => handleAnalyze(liData)}
         >
           Analyze Company
