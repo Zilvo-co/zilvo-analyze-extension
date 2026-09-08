@@ -143,6 +143,7 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
   // client-side. zilvoFetch surfaces 401 (session expired) / 402 (insufficient
   // credits) as typed errors.
   sendCIProgress('analyzing', 'Analyzing company with AI…');
+  const { zilvoIcpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
   const saved = await zilvoFetch<{ jobId: string }>(
     API.analyze,
     {
@@ -159,6 +160,7 @@ async function runCIPipeline(msg: import('../types').AnalyzeForCIMessage): Promi
         pageContent:           msg.pageContent            || undefined,
         userInputField:        msg.userInputField         || undefined,
         batchId:               msg.batchId               || undefined,
+        icpId:                 (zilvoIcpId as string)     || undefined,
       }),
     },
     auth.token

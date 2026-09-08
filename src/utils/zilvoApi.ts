@@ -176,6 +176,14 @@ export async function getMe(token: string): Promise<ZilvoUser> {
   return zilvoFetch<ZilvoUser>(API.me, {}, token);
 }
 
+export interface ZilvoIcp { _id: string; name: string; isDefault?: boolean }
+
+/** GET /api/company-intelligence/icp → the user's positionings (ICPs) to score fit against. */
+export async function getICPs(token: string): Promise<ZilvoIcp[]> {
+  const data = await zilvoFetch<ZilvoIcp[]>('/api/company-intelligence/icp', {}, token);
+  return Array.isArray(data) ? data : [];
+}
+
 /** GET /api/pricing (public) → catalog of billable actions + sell rate. */
 export async function getPricing(): Promise<PricingResponse> {
   return zilvoFetch<PricingResponse>(API.pricing);

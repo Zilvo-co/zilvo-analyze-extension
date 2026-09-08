@@ -4,7 +4,7 @@ import AuthLogin from './components/AuthLogin';
 import LinkedInDetect from './components/LinkedInDetect';
 import WebsiteDetect from './components/WebsiteDetect';
 import BulkAnalyze from './components/BulkAnalyze';
-import { getCredits, getActionCost } from '../utils/zilvoApi';
+import { getCredits, getActionCost, getICPs, type ZilvoIcp } from '../utils/zilvoApi';
 import { CI_ANALYZE_ACTION, CI_ANALYZE_FALLBACK_COST } from '../utils/credits';
 
 type ActiveTab = 'linkedin' | 'website' | 'manual';
@@ -16,6 +16,8 @@ export default function App() {
   const [zilvoName,  setZilvoName]  = useState('');
   const [credits,    setCredits]    = useState<number | null>(null);
   const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
+  const [icps, setIcps] = useState<ZilvoIcp[]>([]);
+  const [icpId, setIcpId] = useState('');
 
   // Resolve auth on open. The background's getActiveToken() is the single
   // resolver the analyze pipeline uses too, so the credits shown here always
@@ -63,6 +65,24 @@ export default function App() {
   }, [zilvoToken]);
 
   useEffect(() => { refreshCredits(); }, [refreshCredits]);
+
+  // Load the user's ICPs so they can pick which positioning to score fit against.
+  useEffect(() => {
+    if (!zilvoToken) { setIcps([]); return; }
+    getICPs(zilvoToken)
+      .then((list) => {
+        setIcps(list);
+        chrome.storage.local.get({ zilvoIcpId: '' }, (items) => {
+          const stored = items.zilvoIcpId as string;
+          const keep = stored && list.some((i) => i._id === stored) ? stored : (list.find((i) => i.isDefault) || list[0])?._id || '';
+          setIcpId(keep);
+          chrome.storage.local.set({ zilvoIcpId: keep });
+        });
+      })
+      .catch(() => setIcps([]));
+  }, [zilvoToken]);
+
+  const onIcpChange = (id: string) => { setIcpId(id); chrome.storage.local.set({ zilvoIcpId: id }); };
 
   // Cost of one analysis, resolved once for the whole popup.
   useEffect(() => {
@@ -152,6 +172,16 @@ export default function App() {
         <button style={tabStyle('website')}  onClick={() => setActiveTab('website')}>Website</button>
         <button style={tabStyle('manual')}   onClick={() => setActiveTab('manual')}>Bulk Upload</button>
       </div>
+
+      {icps.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
+          <label htmlFor="icp-select" style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>Score fit vs</label>
+          <select id="icp-select" value={icpId} onChange={(e) => onIcpChange(e.target.value)}
+            style={{ flex: 1, fontSize: 11, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg, #fff)', color: 'inherit' }}>
+            {icps.map((i) => <option key={i._id} value={i._id}>{i.name}{i.isDefault ? ' (default)' : ''}</option>)}
+          </select>
+        </div>
+      )}
 
       <main className="app-main">
         {activeTab === 'linkedin' && <LinkedInDetect onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
