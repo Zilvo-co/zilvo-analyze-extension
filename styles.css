@@ -774,3 +774,51 @@ body {
   color: #60a5fa;
   overflow: hidden;
 }
+
+/* ── ICP selector ──────────────────────────────────────────────────────────── */
+.icp-bar {
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+/* The label sits inline with the select here, so drop the block-level margin
+   .field-label carries for stacked form fields. */
+.icp-label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.icp-bar .input { padding: 6px 8px; }
+
+/* Empty state — shown instead of the picker when the account has no ICPs. */
+.icp-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.icp-empty-text {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+/* Not .btn: that one is a full-width block with a top margin, which would
+   break the single-line bar this sits in. */
+.icp-add-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.icp-add-btn:hover { background: var(--color-accent-h); }
+
+.icp-error { color: var(--color-error); margin-top: 6px; }

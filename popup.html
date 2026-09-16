@@ -57,6 +57,25 @@
       </button>
     </nav>
 
+    <!-- ── ICP selector — which positioning analyses are scored against ─────── -->
+    <!-- Hidden until the ICP list loads. Two states once it does: the picker
+         when the account has positionings, and the empty state when it has
+         none — an ICP can only be authored in the web app, so the popup sends
+         the user there rather than showing a select with nothing in it. -->
+    <div id="icp-bar" class="icp-bar hidden">
+      <div id="icp-picker" class="input-row hidden">
+        <label class="field-label icp-label" for="icp-select">My ICP</label>
+        <select id="icp-select" class="input" title="Also becomes your default ICP across Zilvo"></select>
+      </div>
+
+      <div id="icp-empty" class="icp-empty hidden">
+        <span class="icp-empty-text">No ICP yet — analyses skip fit scoring.</span>
+        <button id="icp-add-btn" class="icp-add-btn" type="button">+ Add ICP</button>
+      </div>
+
+      <p id="icp-error" class="hint icp-error hidden" role="alert"></p>
+    </div>
+
     <!-- ── Auth overlay (shown when not logged in, tabs 1 & 2) ──────────────── -->
     <div id="auth-overlay" class="main hidden">
       <div class="card">
