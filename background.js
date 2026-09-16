@@ -477,6 +477,11 @@ async function callZilvoAnalyze({
   companyName, linkedinIndustry, linkedinEmployeeCount, linkedinFollowerCount,
   pageContent, userInputField, batchId,
 }) {
+  // The popup mirrors the selected ICP into storage. Read it here, at send
+  // time, so every analyze path (LinkedIn, website, bulk) picks it up without
+  // each call site having to thread it through.
+  const { zilvoIcpId: icpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
+
   let res;
   try {
     res = await fetch(apiUrl(API.analyze), {
@@ -495,6 +500,9 @@ async function callZilvoAnalyze({
         pageContent,
         userInputField,
         batchId,
+        // Which positioning to score fit against, chosen in the popup. Omitted
+        // when unset so the backend falls back to the account default ICP.
+        icpId: icpId || undefined,
       }),
     });
   } catch (err) {

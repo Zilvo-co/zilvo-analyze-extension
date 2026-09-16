@@ -23,7 +23,11 @@ export const ZILVO_ENV = 'production';
 //             on the API host is a 404, and reading a token from anywhere but
 //             the app host is how stale sessions leak in.
 const HOSTS = {
-  local:      { api: 'http://localhost:3001', app: 'http://localhost:3000' },
+  // One port for both: since the platform/marketing repo split, `zilvo-platform`
+  // serves the app (login, dashboards) AND /api from a single local dev server.
+  // `app` is also the ONLY origin getActiveToken() will read a token from, so
+  // pointing it at a port the platform is not on silently logs the popup out.
+  local:      { api: 'http://localhost:3001', app: 'http://localhost:3001' },
   production: { api: 'https://api.zilvo.co',  app: 'https://app.zilvo.co'  },
 };
 
@@ -40,6 +44,9 @@ export const API = {
   charge:  '/api/credits/charge',
   pricing: '/api/pricing',
   analyze: '/api/company-intelligence/analyze',
+  // The user's saved positionings. `${API.icp}/${id}/default` sets the account
+  // default — the same endpoint the web app's My ICP page uses.
+  icp:     '/api/company-intelligence/icp',
 };
 
 /** Web-app pages, relative to ZILVO_APP. Opened in tabs, never fetched. */
@@ -49,6 +56,9 @@ export const APP = {
   forgotPassword: '/forgot-password',
   billing:        '/billing',
   companies:      '/tools/company-intelligence/companies',
+  // My ICP — where positionings are created. The popup links here when the
+  // account has none yet, since an ICP can only be authored in the web app.
+  icp:            '/tools/company-intelligence/icp',
   jobs:           '/tools/company-intelligence/jobs',
   overview:       '/tools/company-intelligence/overview',
 };
