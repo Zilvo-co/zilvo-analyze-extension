@@ -19,16 +19,30 @@ export const ZILVO_ENV = 'production';
 // ZILVO_API — where the REST API lives (fetch calls only).
 // ZILVO_APP — where the web app lives (login, billing, dashboards): every URL
 //             that gets OPENED IN A TAB, and the origin that owns the auth
-//             token. These are DIFFERENT hosts in production — opening a page
-//             on the API host is a 404, and reading a token from anywhere but
-//             the app host is how stale sessions leak in.
+//             token. Reading a token from anywhere but the app host is how
+//             stale sessions leak in.
+//
+// BOTH POINT AT THE SAME HOST. api.zilvo.co and app.zilvo.co are served by the
+// same nginx on the same box, but they are SEPARATE deployments — their /login
+// responses carry different Next.js buildIds, so they are independent processes
+// with independent env files, and their databases had drifted apart. The web
+// app calls its API with relative paths, so the dashboard always reads whatever
+// app.zilvo.co is serving. When the extension pointed at api.zilvo.co it was
+// querying the OTHER deployment: the token verified (shared JWT secret) but
+// account-scoped reads came back empty, so /company-intelligence/icp answered
+// `200 []` instead of erroring and the popup showed "No ICP yet" for a user
+// with two positionings on screen.
+//
+// Anything account-scoped MUST come from the same deployment that owns the
+// session. Keep these two equal unless the API is genuinely split out again —
+// and if it is, the two must share a database.
 const HOSTS = {
   // One port for both: since the platform/marketing repo split, `zilvo-platform`
   // serves the app (login, dashboards) AND /api from a single local dev server.
   // `app` is also the ONLY origin getActiveToken() will read a token from, so
   // pointing it at a port the platform is not on silently logs the popup out.
   local:      { api: 'http://localhost:3001', app: 'http://localhost:3001' },
-  production: { api: 'https://api.zilvo.co',  app: 'https://app.zilvo.co'  },
+  production: { api: 'https://app.zilvo.co',  app: 'https://app.zilvo.co'  },
 };
 
 export const ZILVO_API = HOSTS[ZILVO_ENV].api;

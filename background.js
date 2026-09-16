@@ -13,7 +13,8 @@
  */
 
 import { sleep, normalizeLinkedInUrl } from './helpers/utils.js';
-import { API, apiUrl } from './helpers/constants.js';
+import { API, apiUrl, ZILVO_APP } from './helpers/constants.js';
+import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 
 // Open the side panel (right-side panel) when the toolbar icon is clicked.
 // Falls back silently in environments where the sidePanel API isn't available.
@@ -48,7 +49,7 @@ async function autoScrapeLinkedInPage(tabId, url) {
   const lastTs = _recentlyScraped.get(canonicalUrl);
   if (lastTs && Date.now() - lastTs < AUTO_SCRAPE_COOLDOWN_MS) return;
 
-  const auth = await _getAuthFromStorage();
+  const auth = await getStoredAuth();
   if (!auth?.token) {
     // Show badge so the user knows a LinkedIn page was detected but they need to sign in
     _setBadge(tabId, 'LI', '#f59e0b');
@@ -85,7 +86,7 @@ async function autoScrapeLinkedInPage(tabId, url) {
 
   if (result.success) {
     _setBadge(tabId, '✓', '#4caf50');
-    if (result.creditsRemaining != null) await _updateStoredCredits(result.creditsRemaining);
+    if (result.creditsRemaining != null) await updateStoredCredits(result.creditsRemaining);
     await _setSessionScrape({ tabId, linkedinUrl: canonicalUrl, status: 'DONE', ...result, timestamp: Date.now() });
     broadcast({ action: 'CI_AUTO_STATUS', status: 'DONE', linkedinUrl: canonicalUrl, ...result });
   } else {
@@ -98,20 +99,12 @@ async function autoScrapeLinkedInPage(tabId, url) {
   setTimeout(() => { chrome.action.setBadgeText({ text: '', tabId }).catch(() => {}); }, 8_000);
 }
 
-// ── Storage helpers (background-side, avoids re-importing helpers/auth.js) ────
+// ── Storage helpers ──────────────────────────────────────────────────────────
+// Reads and writes go through helpers/auth.js. The background used to keep its
+// own copies that hit chrome.storage directly, which would now skip the
+// origin check getStoredAuth() enforces — a foreign token would stay live here
+// while the popup rejected it.
 const _AUTH_KEY = 'zilvo_auth';
-
-async function _getAuthFromStorage() {
-  const r = await chrome.storage.local.get(_AUTH_KEY);
-  return r[_AUTH_KEY] ?? null;
-}
-
-async function _updateStoredCredits(credits) {
-  const r    = await chrome.storage.local.get(_AUTH_KEY);
-  const auth = r[_AUTH_KEY];
-  if (!auth) return;
-  await chrome.storage.local.set({ [_AUTH_KEY]: { ...auth, user: { ...auth.user, credits } } });
-}
 
 async function _setSessionScrape(data) {
   try { await chrome.storage.session.set({ lastCIScrape: data }); } catch { /* session API may be unavailable */ }
@@ -131,12 +124,25 @@ const RETRY_LIMIT            = 2;        // total attempts (1 original + 1 retry
 const RETRY_BACKOFF_MS       = 2_500;    // wait between retry attempts
 
 // ─── Message router ───────────────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  routeMessage(message, sendResponse);
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  routeMessage(message, sender, sendResponse);
   return true; // keep the channel open for async responses
 });
 
-async function routeMessage(message, sendResponse) {
+/**
+ * True when a content-script message came from the web app this build is
+ * configured against.
+ *
+ * `sender.origin` is filled in by Chrome from the frame that actually sent the
+ * message, so a page cannot forge it — which is why the check lives here and
+ * not in content_zilvo.js.
+ */
+function isAppOrigin(sender) {
+  const origin = sender?.origin ?? (sender?.url ? new URL(sender.url).origin : '');
+  return origin === ZILVO_APP;
+}
+
+async function routeMessage(message, sender, sendResponse) {
   try {
     switch (message.action) {
       // ── Company Intelligence ──────────────────────────────────────────────
@@ -161,13 +167,29 @@ async function routeMessage(message, sendResponse) {
         break;
 
       // ── Web-app auth sync (content_zilvo.js) ─────────────────────────────
+      // Both sync cases are origin-gated: the content script runs on production
+      // and localhost alike, and only the host this build talks to may touch
+      // the session. Otherwise a localhost tab silently replaces a production
+      // token (or logs the user out of one environment by visiting the other).
       case 'ZILVO_SYNC_AUTH':
-        await chrome.storage.local.set({ [_AUTH_KEY]: { token: message.token, user: message.user } });
+        if (!isAppOrigin(sender)) {
+          console.warn('[Zilvo] ignoring auth sync from', sender?.origin, '— this build talks to', ZILVO_APP);
+          sendResponse({ success: false, error: 'origin mismatch' });
+          break;
+        }
+        await chrome.storage.local.set({
+          [_AUTH_KEY]: { token: message.token, user: message.user, origin: ZILVO_APP },
+        });
         broadcast({ action: 'ZILVO_AUTH_SYNCED', user: message.user, token: message.token });
         sendResponse({ success: true });
         break;
 
       case 'ZILVO_SYNC_LOGOUT':
+        if (!isAppOrigin(sender)) {
+          console.warn('[Zilvo] ignoring logout sync from', sender?.origin, '— this build talks to', ZILVO_APP);
+          sendResponse({ success: false, error: 'origin mismatch' });
+          break;
+        }
         await chrome.storage.local.remove(_AUTH_KEY);
         broadcast({ action: 'ZILVO_AUTH_SYNCED', loggedOut: true });
         sendResponse({ success: true });
