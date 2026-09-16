@@ -8,7 +8,7 @@
 
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
-import { APP, appUrl } from './helpers/constants.js';
+import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
 
 const $ = id => document.getElementById(id);
 
@@ -85,9 +85,19 @@ async function initAuth() {
     if (msg.action === 'ZILVO_AUTH_SYNCED') onAuthSynced(msg);
   });
 
+  icpSelect.addEventListener('change', onIcpChange);
+
+  // ICPs are authored in the web app, so the empty state just sends the user
+  // to My ICP. Opening a tab closes the popup; the list is re-fetched on the
+  // next open, so the new ICP shows up without any extra refresh wiring.
+  icpAddBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: appUrl(APP.icp) });
+  });
+
   const auth = await getStoredAuth();
   if (auth?.token) {
     showUserBadge(auth.user);
+    await initIcpSelector();
     await runDetection();
   }
   syncAuthOverlay();
@@ -123,12 +133,146 @@ function hideUserBadge() {
 async function onAuthSynced(msg) {
   if (msg.loggedOut) {
     hideUserBadge();
+    // Hide the selector too: the ICPs belong to the account that just signed
+    // out, and the next account's list may be completely different.
+    _icps = [];
+    setIcpState('hidden');
     syncAuthOverlay();
     resetAllDetection();
   } else {
     showUserBadge(msg.user);
+    await initIcpSelector();
     syncAuthOverlay();
     if (!_detection) await runDetection();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ICP SELECTOR — which positioning an analysis is scored against
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Picking one makes it the ACCOUNT default (same endpoint the web app's My ICP
+// page calls), so the extension and the dashboard can never disagree about the
+// active positioning. `zilvoIcpId` is mirrored into chrome.storage because
+// background.js reads it when it POSTs the analysis.
+
+const ICP_KEY   = 'zilvoIcpId';
+const icpBar    = $('icp-bar');
+const icpPicker = $('icp-picker');
+const icpSelect = $('icp-select');
+const icpEmpty  = $('icp-empty');
+const icpAddBtn = $('icp-add-btn');
+const icpError  = $('icp-error');
+
+let _icps = [];
+
+function showIcpError(message) {
+  icpError.textContent = message;
+  icpError.classList.toggle('hidden', !message);
+}
+
+/**
+ * Show the bar in one of its two states, or hide it entirely.
+ * `state` is 'picker' (account has ICPs), 'empty' (none yet) or 'hidden'.
+ */
+function setIcpState(state) {
+  icpBar.classList.toggle('hidden', state === 'hidden');
+  icpPicker.classList.toggle('hidden', state !== 'picker');
+  icpEmpty.classList.toggle('hidden', state !== 'empty');
+}
+
+function renderIcpOptions() {
+  // No "(default)" marker: the selected ICP *is* the default, so the label
+  // would follow the selection around and read as noise.
+  icpSelect.innerHTML = '';
+  for (const icp of _icps) {
+    const option = document.createElement('option');
+    option.value = icp._id;
+    option.textContent = icp.name;
+    icpSelect.appendChild(option);
+  }
+}
+
+async function initIcpSelector() {
+  const auth = await getStoredAuth();
+  if (!auth?.token) { setIcpState('hidden'); return; }
+
+  let list;
+  try {
+    const res = await fetch(apiUrl(API.icp), {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    list = await res.json();
+  } catch (err) {
+    // A failed lookup is not worth an error banner over the whole panel —
+    // analysis still works, it just scores against the account default. Stay
+    // hidden rather than showing the empty state: a network blip is not
+    // evidence the account has no ICPs, and "+ Add ICP" would be a lie.
+    console.warn('[Zilvo] ICP list failed —', err.message);
+    setIcpState('hidden');
+    return;
+  }
+
+  _icps = Array.isArray(list) ? list : [];
+
+  // No positionings yet: offer the way to create one instead of hiding the bar
+  // outright, which left no hint that fit scoring existed at all.
+  if (!_icps.length) {
+    await chrome.storage.local.remove(ICP_KEY);
+    showIcpError('');
+    setIcpState('empty');
+    return;
+  }
+
+  renderIcpOptions();
+
+  // The account default wins over the last local pick: it is the same
+  // isDefault the My ICP page writes, so a change made in the web app shows up
+  // here instead of being shadowed by a stale local value.
+  const { [ICP_KEY]: stored } = await chrome.storage.local.get({ [ICP_KEY]: '' });
+  const keep =
+    _icps.find(i => i.isDefault)?._id ||
+    (stored && _icps.some(i => i._id === stored) ? stored : '') ||
+    _icps[0]._id;
+
+  icpSelect.value = keep;
+  await chrome.storage.local.set({ [ICP_KEY]: keep });
+  showIcpError('');
+  setIcpState('picker');
+}
+
+async function onIcpChange() {
+  const id       = icpSelect.value;
+  const previous = _icps.find(i => i.isDefault)?._id || '';
+  const auth     = await getStoredAuth();
+
+  showIcpError('');
+  // Mirror first so an analysis started before the save lands still uses the
+  // ICP the user just picked.
+  await chrome.storage.local.set({ [ICP_KEY]: id });
+  if (!auth?.token) return;
+
+  icpSelect.disabled = true;
+  try {
+    const res = await fetch(`${apiUrl(API.icp)}/${encodeURIComponent(id)}/default`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${auth.token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    _icps = _icps.map(i => ({ ...i, isDefault: i._id === id }));
+  } catch (err) {
+    // Roll back rather than leave the panel showing a default the account does
+    // not have — the divergence stays invisible until an analysis is scored
+    // against the wrong positioning.
+    console.warn('[Zilvo] set default ICP failed —', err.message);
+    if (previous) {
+      icpSelect.value = previous;
+      await chrome.storage.local.set({ [ICP_KEY]: previous });
+    }
+    showIcpError('Could not set default — try again.');
+  } finally {
+    icpSelect.disabled = false;
   }
 }
 

@@ -8,11 +8,12 @@ export declare const ZILVO_APP: string;
 export declare const API: {
   login: string; logout: string; me: string; credits: string;
   ledger: string; charge: string; pricing: string; analyze: string;
+  icp: string;
 };
 
 export declare const APP: {
   login: string; signup: string; forgotPassword: string; billing: string;
-  companies: string; jobs: string; overview: string;
+  companies: string; jobs: string; overview: string; icp: string;
 };
 
 export declare function apiUrl(path: string): string;

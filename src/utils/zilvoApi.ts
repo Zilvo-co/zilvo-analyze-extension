@@ -184,6 +184,20 @@ export async function getICPs(token: string): Promise<ZilvoIcp[]> {
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * POST /api/company-intelligence/icp/{id}/default → make this ICP the account
+ * default. Same endpoint the web app's My ICP page uses, so the two surfaces
+ * can never disagree about which positioning is default. Clears isDefault on
+ * the user's other ICPs server-side; returns the updated ICP.
+ */
+export async function setDefaultICP(token: string, id: string): Promise<ZilvoIcp> {
+  return zilvoFetch<ZilvoIcp>(
+    `/api/company-intelligence/icp/${encodeURIComponent(id)}/default`,
+    { method: 'POST' },
+    token
+  );
+}
+
 /** GET /api/pricing (public) → catalog of billable actions + sell rate. */
 export async function getPricing(): Promise<PricingResponse> {
   return zilvoFetch<PricingResponse>(API.pricing);

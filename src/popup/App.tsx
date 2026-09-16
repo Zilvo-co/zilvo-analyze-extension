@@ -4,8 +4,9 @@ import AuthLogin from './components/AuthLogin';
 import LinkedInDetect from './components/LinkedInDetect';
 import WebsiteDetect from './components/WebsiteDetect';
 import BulkAnalyze from './components/BulkAnalyze';
-import { getCredits, getActionCost, getICPs, type ZilvoIcp } from '../utils/zilvoApi';
+import { getCredits, getActionCost, getICPs, setDefaultICP, type ZilvoIcp } from '../utils/zilvoApi';
 import { CI_ANALYZE_ACTION, CI_ANALYZE_FALLBACK_COST } from '../utils/credits';
+import { getZilvoAppUrl, APP, appUrl } from '../config';
 
 type ActiveTab = 'linkedin' | 'website' | 'manual';
 
@@ -18,6 +19,10 @@ export default function App() {
   const [creditCost, setCreditCost] = useState(CI_ANALYZE_FALLBACK_COST);
   const [icps, setIcps] = useState<ZilvoIcp[]>([]);
   const [icpId, setIcpId] = useState('');
+  const [icpSaving, setIcpSaving] = useState(false);
+  const [icpError, setIcpError] = useState('');
+  // Empty list vs. not-loaded-yet: only the former should offer "+ Add ICP".
+  const [icpsLoaded, setIcpsLoaded] = useState(false);
 
   // Resolve auth on open. The background's getActiveToken() is the single
   // resolver the analyze pipeline uses too, so the credits shown here always
@@ -68,21 +73,61 @@ export default function App() {
 
   // Load the user's ICPs so they can pick which positioning to score fit against.
   useEffect(() => {
-    if (!zilvoToken) { setIcps([]); return; }
+    if (!zilvoToken) { setIcps([]); setIcpId(''); setIcpsLoaded(false); return; }
+    let cancelled = false;
     getICPs(zilvoToken)
       .then((list) => {
+        if (cancelled) return;
         setIcps(list);
+        setIcpsLoaded(true);
         chrome.storage.local.get({ zilvoIcpId: '' }, (items) => {
+          if (cancelled) return;
+          // The account default wins over whatever this device last used: it is
+          // the same isDefault the My ICP page writes, so a change made in the
+          // web app shows up here on the next open instead of being shadowed by
+          // a stale local pick.
           const stored = items.zilvoIcpId as string;
-          const keep = stored && list.some((i) => i._id === stored) ? stored : (list.find((i) => i.isDefault) || list[0])?._id || '';
+          const keep =
+            list.find((i) => i.isDefault)?._id ||
+            (stored && list.some((i) => i._id === stored) ? stored : '') ||
+            list[0]?._id || '';
           setIcpId(keep);
           chrome.storage.local.set({ zilvoIcpId: keep });
         });
       })
-      .catch(() => setIcps([]));
+      // Stay silent on failure rather than falling through to the empty state:
+      // a network blip is not evidence the account has no ICPs.
+      .catch(() => { if (!cancelled) { setIcps([]); setIcpsLoaded(false); } });
+    return () => { cancelled = true; };
   }, [zilvoToken]);
 
-  const onIcpChange = (id: string) => { setIcpId(id); chrome.storage.local.set({ zilvoIcpId: id }); };
+  // Picking an ICP makes it the account default, exactly as the web app's My
+  // ICP page does, so both surfaces always agree on the active positioning.
+  const onIcpChange = (id: string) => {
+    const prevId   = icpId;
+    const prevIcps = icps;
+    setIcpError('');
+    setIcpId(id);
+    // The background reads zilvoIcpId when it POSTs the analysis, so keep it in
+    // step with the selection immediately — not only once the account default
+    // has saved.
+    chrome.storage.local.set({ zilvoIcpId: id });
+    setIcps((list) => list.map((i) => ({ ...i, isDefault: i._id === id })));
+    if (!zilvoToken) return;
+
+    setIcpSaving(true);
+    setDefaultICP(zilvoToken, id)
+      .catch(() => {
+        // Roll back rather than leave the popup showing a default the account
+        // does not have. A silent divergence is invisible until an analysis is
+        // scored against the wrong positioning.
+        setIcpId(prevId);
+        setIcps(prevIcps);
+        chrome.storage.local.set({ zilvoIcpId: prevId });
+        setIcpError('Could not set default — try again.');
+      })
+      .finally(() => setIcpSaving(false));
+  };
 
   // Cost of one analysis, resolved once for the whole popup.
   useEffect(() => {
@@ -173,13 +218,36 @@ export default function App() {
         <button style={tabStyle('manual')}   onClick={() => setActiveTab('manual')}>Bulk Upload</button>
       </div>
 
+      {/* ICPs are authored in the web app, so an account with none gets a link to
+          My ICP instead of a select with nothing in it. */}
+      {icpsLoaded && icps.length === 0 && (
+        <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>No ICP yet — analyses skip fit scoring.</span>
+          <button
+            onClick={async () => chrome.tabs.create({ url: appUrl(APP.icp, await getZilvoAppUrl()) })}
+            style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '4px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
+            + Add ICP
+          </button>
+        </div>
+      )}
+
       {icps.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
-          <label htmlFor="icp-select" style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>Score fit vs</label>
-          <select id="icp-select" value={icpId} onChange={(e) => onIcpChange(e.target.value)}
-            style={{ flex: 1, fontSize: 11, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg, #fff)', color: 'inherit' }}>
-            {icps.map((i) => <option key={i._id} value={i._id}>{i.name}{i.isDefault ? ' (default)' : ''}</option>)}
-          </select>
+        <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label htmlFor="icp-select" style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>My ICP</label>
+            {/* No "(default)" suffix: the selected ICP *is* the account default,
+                so the marker would sit on every option in turn and read as noise. */}
+            <select id="icp-select" value={icpId} disabled={icpSaving}
+              onChange={(e) => onIcpChange(e.target.value)}
+              title="Also becomes your default ICP across Zilvo"
+              aria-describedby={icpError ? 'icp-error' : undefined}
+              style={{ flex: 1, fontSize: 11, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg, #fff)', color: 'inherit', opacity: icpSaving ? 0.6 : 1 }}>
+              {icps.map((i) => <option key={i._id} value={i._id}>{i.name}</option>)}
+            </select>
+          </div>
+          {icpError && (
+            <div id="icp-error" role="alert" style={{ fontSize: 10, color: 'var(--danger, #c0392b)', marginTop: 4 }}>{icpError}</div>
+          )}
         </div>
       )}
 
