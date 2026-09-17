@@ -305,6 +305,7 @@ async function runDetection() {
       showLiResult('success', 'Auto-analyzed! Results are in your Zilvo Dashboard.');
       updateCreditsDisplay(session.creditsRemaining);
     } else if (session.status === 'ERROR') {
+      _lastLiAttempt = autoLiAttempt(session.linkedinUrl || result.linkedinUrl);
       showLiResult('error', session.error || 'Auto-analysis failed.');
     }
   }
@@ -357,6 +358,10 @@ function wireLinkedInTab() {
 
   $('li-analyze-btn').addEventListener('click', () => handleLiAnalyze(null));
 
+  $('li-retry-btn').addEventListener('click', () => {
+    if (_lastLiAttempt) runLiAnalyze(_lastLiAttempt, 'retry');
+  });
+
   $('li-manual-toggle').addEventListener('click', () =>
     toggleSection($('li-manual-body'), $('li-manual-chevron'), $('li-manual-toggle'))
   );
@@ -372,31 +377,54 @@ function wireLinkedInTab() {
   });
 }
 
+// What the last LinkedIn analyze asked for, so "Try again" repeats THAT
+// request. Also set for a failed AUTO-analysis, which the user never started by
+// hand and so has nothing else to click. Token excluded on purpose — it is
+// re-read at send time so a retry after re-login uses the current session.
+let _lastLiAttempt = null;
+
+/** The attempt that would re-run an auto-analysis of `linkedinUrl`. */
+function autoLiAttempt(linkedinUrl) {
+  if (!linkedinUrl) return null;
+  // Deliberately the URL form, not the tab form: it opens a fresh /about/ tab
+  // rather than depending on the user still sitting on the page that failed.
+  return { action: 'ANALYZE_COMPANY_URL', linkedinUrl, userInputField: linkedinUrl };
+}
+
 async function handleLiAnalyze(overrideUrl) {
   $('li-manual-error').textContent = '';
-  hideLiResult();
 
-  const auth = await getStoredAuth();
-  if (!auth?.token) { syncAuthOverlay(); return; }
-
-  let message;
-
+  let attempt;
   if (overrideUrl) {
     if (!isValidLinkedInCompanyUrl(overrideUrl)) {
       $('li-manual-error').textContent = 'Please enter a valid LinkedIn company URL.';
       return;
     }
-    message = { action: 'ANALYZE_COMPANY_URL', linkedinUrl: overrideUrl, token: auth.token, userInputField: overrideUrl };
+    attempt = { action: 'ANALYZE_COMPANY_URL', linkedinUrl: overrideUrl, userInputField: overrideUrl };
   } else {
     if (!_detection || _detection.type !== 'LINKEDIN_COMPANY') return;
-    message = { action: 'ANALYZE_COMPANY', tabId: _detection.tabId, token: auth.token, userInputField: _detection.linkedinUrl };
+    attempt = { action: 'ANALYZE_COMPANY', tabId: _detection.tabId, userInputField: _detection.linkedinUrl };
   }
 
-  setLiAnalyzeState(true);
-  const result = await requestAnalyze(message);
-  setLiAnalyzeState(false);
+  await runLiAnalyze(attempt, 'main');
+}
+
+/**
+ * Send one LinkedIn analyze. `source` only decides which button shows the
+ * spinner — both disable the whole set so a retry cannot race the original.
+ */
+async function runLiAnalyze(attempt, source) {
+  const auth = await getStoredAuth();
+  if (!auth?.token) { syncAuthOverlay(); return; }
+
+  _lastLiAttempt = attempt;
+  hideLiResult();
+  setLiAnalyzeState(true, source);
+  const result = await requestAnalyze({ ...attempt, token: auth.token });
+  setLiAnalyzeState(false, source);
 
   if (result.success) {
+    _lastLiAttempt = null;
     updateCreditsDisplay(result.creditsRemaining);
     showLiResult('success', 'Analysis started! View results in your Zilvo Dashboard.');
     // Update button label
@@ -435,15 +463,22 @@ function analyzeErrorText(result) {
   return result?.status ? `${reason} (HTTP ${result.status})` : reason;
 }
 
-function setLiAnalyzeState(on) {
+function setLiAnalyzeState(on, source = 'main') {
   const btn = $('li-analyze-btn');
   const manBtn = $('li-manual-btn');
+  const retBtn = $('li-retry-btn');
   if (btn) btn.disabled = on;
   if (manBtn) manBtn.disabled = on;
-  $('li-analyze-text').textContent = on ? 'Analyzing…' : (
+  if (retBtn) retBtn.disabled = on;
+
+  const mainBusy  = on && source === 'main';
+  const retryBusy = on && source === 'retry';
+  $('li-analyze-text').textContent = mainBusy ? 'Analyzing…' : (
     _detection?.type === 'LINKEDIN_COMPANY' ? 'Re-analyze' : 'Analyze Company'
   );
-  $('li-analyze-spinner').style.display = on ? 'inline-block' : 'none';
+  $('li-analyze-spinner').style.display = mainBusy  ? 'inline-block' : 'none';
+  $('li-retry-text').textContent        = retryBusy ? 'Retrying…' : 'Try again';
+  $('li-retry-spinner').style.display   = retryBusy ? 'inline-block' : 'none';
 }
 
 function showLiResult(type, text) {
@@ -452,10 +487,14 @@ function showLiResult(type, text) {
   card.classList.remove('hidden');
   msg.className   = `result-msg result-${type}`;
   msg.textContent = text;
+  // Offer the retry only where it means something: a failure we still know how
+  // to repeat.
+  $('li-retry-btn').classList.toggle('hidden', type !== 'error' || !_lastLiAttempt);
 }
 
 function hideLiResult() {
   $('li-result-card').classList.add('hidden');
+  $('li-retry-btn').classList.add('hidden');
 }
 
 // ── Website tab detection UI ──────────────────────────────────────────────────
@@ -484,6 +523,10 @@ function wireWebsiteTab() {
 
   $('web-analyze-btn').addEventListener('click', () => handleWebAnalyze(null));
 
+  $('web-retry-btn').addEventListener('click', () => {
+    if (_lastWebAttempt) runWebAnalyze(_lastWebAttempt, 'retry');
+  });
+
   $('web-manual-toggle').addEventListener('click', () =>
     toggleSection($('web-manual-body'), $('web-manual-chevron'), $('web-manual-toggle'))
   );
@@ -499,16 +542,18 @@ function wireWebsiteTab() {
   });
 }
 
+// What the last website analyze actually asked for, so "Try again" repeats THAT
+// request rather than whatever the panel happens to be detecting now. Cleared
+// on success — a finished analysis has nothing left to retry.
+//
+// The token is deliberately NOT stored: it is re-read at send time, so a retry
+// after a re-login uses the current session instead of the expired one.
+let _lastWebAttempt = null;
+
 async function handleWebAnalyze(overrideUrl) {
   $('web-manual-error').textContent = '';
-  hideWebResult();
 
-  const auth = await getStoredAuth();
-  if (!auth?.token) { syncAuthOverlay(); return; }
-
-  let websiteUrl, linkedinUrl;
-
-  let userInputField;
+  let websiteUrl, linkedinUrl, userInputField, tabId;
   if (overrideUrl) {
     if (!overrideUrl.startsWith('http')) {
       $('web-manual-error').textContent = 'Enter a valid URL starting with https://';
@@ -517,25 +562,34 @@ async function handleWebAnalyze(overrideUrl) {
     websiteUrl     = overrideUrl;
     linkedinUrl    = null;
     userInputField = overrideUrl;
+    tabId          = null;
   } else {
     if (!_detection || (_detection.type !== 'WEBSITE' && _detection.type !== 'WEBSITE_WITH_LINKEDIN')) return;
     websiteUrl     = _detection.websiteUrl || _detection.currentUrl;
     linkedinUrl    = _detection.linkedinUrl || null;
     userInputField = _detection.currentUrl || websiteUrl;
+    tabId          = _detection?.tabId ?? null;
   }
 
-  setWebAnalyzeState(true);
-  const result = await requestAnalyze({
-    action:      'ANALYZE_WEBSITE',
-    websiteUrl,
-    linkedinUrl,
-    token:       auth.token,
-    tabId:       overrideUrl ? null : (_detection?.tabId ?? null),
-    userInputField,
-  });
-  setWebAnalyzeState(false);
+  await runWebAnalyze({ websiteUrl, linkedinUrl, userInputField, tabId }, 'main');
+}
+
+/**
+ * Send one website analyze. `source` only decides which button shows the
+ * spinner — both disable the whole set so a retry cannot race the original.
+ */
+async function runWebAnalyze(attempt, source) {
+  const auth = await getStoredAuth();
+  if (!auth?.token) { syncAuthOverlay(); return; }
+
+  _lastWebAttempt = attempt;
+  hideWebResult();
+  setWebAnalyzeState(true, source);
+  const result = await requestAnalyze({ action: 'ANALYZE_WEBSITE', ...attempt, token: auth.token });
+  setWebAnalyzeState(false, source);
 
   if (result.success) {
+    _lastWebAttempt = null;
     updateCreditsDisplay(result.creditsRemaining);
     showWebResult('success', 'Analysis started! View results in your Zilvo Dashboard.');
   } else {
@@ -543,13 +597,20 @@ async function handleWebAnalyze(overrideUrl) {
   }
 }
 
-function setWebAnalyzeState(on) {
+function setWebAnalyzeState(on, source = 'main') {
   const btn    = $('web-analyze-btn');
   const manBtn = $('web-manual-btn');
-  if (btn) btn.disabled = on;
+  const retBtn = $('web-retry-btn');
+  if (btn)    btn.disabled    = on;
   if (manBtn) manBtn.disabled = on;
-  $('web-analyze-text').textContent     = on ? 'Analyzing…' : 'Analyze Website';
-  $('web-analyze-spinner').style.display = on ? 'inline-block' : 'none';
+  if (retBtn) retBtn.disabled = on;
+
+  const mainBusy  = on && source === 'main';
+  const retryBusy = on && source === 'retry';
+  $('web-analyze-text').textContent       = mainBusy  ? 'Analyzing…' : 'Analyze Website';
+  $('web-analyze-spinner').style.display  = mainBusy  ? 'inline-block' : 'none';
+  $('web-retry-text').textContent         = retryBusy ? 'Retrying…' : 'Try again';
+  $('web-retry-spinner').style.display    = retryBusy ? 'inline-block' : 'none';
 }
 
 function showWebResult(type, text) {
@@ -558,10 +619,14 @@ function showWebResult(type, text) {
   card.classList.remove('hidden');
   msg.className   = `result-msg result-${type}`;
   msg.textContent = text;
+  // Offer the retry only where it means something: a failure we still know how
+  // to repeat.
+  $('web-retry-btn').classList.toggle('hidden', type !== 'error' || !_lastWebAttempt);
 }
 
 function hideWebResult() {
   $('web-result-card').classList.add('hidden');
+  $('web-retry-btn').classList.add('hidden');
 }
 
 // ── Auto-scrape status listener (from background.js) ─────────────────────────
@@ -584,6 +649,9 @@ function onAutoScrapeStatus(msg) {
   } else if (msg.status === 'ERROR') {
     setLiAnalyzeState(false);
     $('li-auto-status').classList.add('hidden');
+    // An auto-analysis is not something the user started, so without this the
+    // error card has nothing to act on.
+    _lastLiAttempt = autoLiAttempt(msg.linkedinUrl || _detection?.linkedinUrl);
     showLiResult('error', msg.error || 'Auto-analysis failed.');
   }
 }
@@ -626,6 +694,13 @@ let _bulkLinkedInUrls = [];
 let _bulkWebsiteUrls  = [];
 let _bulkRunning      = false;
 
+// The rows that errored in the last pass, paired with the <li> they own, plus
+// the batch they belong to. "Retry failed" re-runs exactly these — the rows
+// that already succeeded are never re-sent, so a retry cannot double-charge.
+let _bulkFailed  = [];
+let _bulkBatchId = null;
+let _bulkTotal   = 0;
+
 function initManualTab() {
   $('li-csv-input').addEventListener('change',  e => handleCsvUpload(e, 'linkedin'));
   $('web-csv-input').addEventListener('change', e => handleCsvUpload(e, 'website'));
@@ -634,6 +709,7 @@ function initManualTab() {
   $('li-csv-example-btn').addEventListener('click', () => downloadExampleCsv('linkedin'));
   $('web-csv-example-btn').addEventListener('click', () => downloadExampleCsv('website'));
   $('bulk-run-btn').addEventListener('click', handleBulkAnalyze);
+  $('bulk-retry-btn').addEventListener('click', handleBulkRetry);
 }
 
 function downloadExampleCsv(type) {
@@ -818,10 +894,129 @@ function clearBulkCsv(type) {
 }
 
 function updateBulkRunBtn() {
+  // Loading or clearing a CSV invalidates the previous run's failures: the rows
+  // still on screen are no longer what "Retry failed" would send.
+  _bulkFailed = [];
+  $('bulk-retry-btn').classList.add('hidden');
+
   const hasData = _bulkLinkedInUrls.length > 0 || _bulkWebsiteUrls.length > 0;
   const total   = _bulkLinkedInUrls.length + _bulkWebsiteUrls.length;
   $('bulk-run-btn').classList.toggle('hidden', !hasData);
   $('bulk-run-text').textContent = hasData ? `Analyze All (${total})` : 'Analyze All';
+}
+
+/** One result row. Text goes in via textContent — a CSV supplies these URLs. */
+function makeBulkRow(job) {
+  const li  = document.createElement('li');
+  li.className = 'bulk-result-item';
+
+  const dot = document.createElement('span');
+  dot.className = 'bulk-status-dot bulk-dot-pending';
+
+  const url = document.createElement('span');
+  url.className  = 'bulk-item-url';
+  url.title      = job.url;
+  url.textContent = truncateUrl(job.url);
+
+  const badge = document.createElement('span');
+  badge.className  = 'bulk-item-badge bulk-badge-pending';
+  badge.textContent = 'Pending';
+
+  li.append(dot, url, badge);
+  return li;
+}
+
+function setBulkRowState(itemEl, state, label) {
+  itemEl.querySelector('.bulk-status-dot').className   = `bulk-status-dot bulk-dot-${state}`;
+  itemEl.querySelector('.bulk-item-badge').className   = `bulk-item-badge bulk-badge-${state}`;
+  itemEl.querySelector('.bulk-item-badge').textContent = label;
+}
+
+/** Drop the previous failure reason so a retry does not stack a second line. */
+function clearBulkRowReason(itemEl) {
+  itemEl.querySelector('.bulk-item-reason')?.remove();
+  itemEl.removeAttribute('title');
+}
+
+function setBulkBusy(on, source) {
+  _bulkRunning = on;
+  $('bulk-run-btn').disabled   = on;
+  $('bulk-retry-btn').disabled = on;
+
+  const mainBusy  = on && source === 'main';
+  const retryBusy = on && source === 'retry';
+  $('bulk-run-spinner').style.display   = mainBusy  ? 'inline-block' : 'none';
+  $('bulk-run-text').textContent        = mainBusy  ? 'Analyzing…' : `Analyze All (${_bulkTotal})`;
+  $('bulk-retry-spinner').style.display = retryBusy ? 'inline-block' : 'none';
+  $('bulk-retry-text').textContent      = retryBusy
+    ? 'Retrying…'
+    : `Retry failed (${_bulkFailed.length})`;
+  $('bulk-retry-btn').classList.toggle('hidden', on || _bulkFailed.length === 0);
+}
+
+/**
+ * Run `entries` ({ job, itemEl }) one at a time, updating each row in place.
+ * Leaves _bulkFailed holding whatever failed THIS pass, so a retry of a retry
+ * narrows down rather than repeating the original set.
+ */
+async function runBulkJobs(entries, token, source) {
+  const failed = [];
+  let done = 0;
+
+  $('bulk-progress-fill').style.width  = '0%';
+  $('bulk-progress-label').textContent = `0 / ${entries.length} completed`;
+
+  for (const entry of entries) {
+    const { job, itemEl } = entry;
+    clearBulkRowReason(itemEl);
+    setBulkRowState(itemEl, 'active', 'Analyzing…');
+    itemEl.scrollIntoView({ block: 'nearest' });
+
+    const result = job.type === 'linkedin'
+      ? await requestAnalyze({
+          action:        'ANALYZE_COMPANY_URL',
+          linkedinUrl:   job.url,
+          token,
+          userInputField: job.url,
+          batchId:       _bulkBatchId,
+        })
+      : await requestAnalyze({
+          action:        'ANALYZE_WEBSITE',
+          websiteUrl:    job.url,
+          linkedinUrl:   null,
+          token,
+          tabId:         null,
+          userInputField: job.url,
+          batchId:       _bulkBatchId,
+        });
+
+    done++;
+    $('bulk-progress-fill').style.width  = `${Math.round((done / entries.length) * 100)}%`;
+    $('bulk-progress-label').textContent = `${done} / ${entries.length} completed`;
+
+    if (result.success) {
+      setBulkRowState(itemEl, 'done', 'Done');
+      if (result.creditsRemaining != null) updateCreditsDisplay(result.creditsRemaining);
+    } else {
+      setBulkRowState(itemEl, 'error', 'Error');
+      // The reason used to live only in the row's `title`, so it was invisible
+      // unless you hovered. Put it on a second line under the URL.
+      const reason = analyzeErrorText(result);
+      const reasonEl = document.createElement('span');
+      reasonEl.className  = 'bulk-item-reason';
+      reasonEl.textContent = reason;
+      itemEl.appendChild(reasonEl);
+      itemEl.title = reason;
+      failed.push(entry);
+    }
+  }
+
+  _bulkFailed = failed;
+  setBulkBusy(false, source);
+
+  // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
+  $('bulk-dashboard-link').href = appUrl(APP.jobs);
+  $('bulk-dashboard-link').classList.remove('hidden');
 }
 
 async function handleBulkAnalyze() {
@@ -836,92 +1031,39 @@ async function handleBulkAnalyze() {
   ];
   if (!jobs.length) return;
 
-  const batchId = `bulk-${Date.now().toString(36)}`;
+  _bulkBatchId = `bulk-${Date.now().toString(36)}`;
+  _bulkTotal   = jobs.length;
+  _bulkFailed  = [];
 
-  _bulkRunning = true;
-  $('bulk-run-btn').disabled           = true;
-  $('bulk-run-spinner').style.display  = 'inline-block';
-  $('bulk-run-text').textContent       = 'Analyzing…';
   $('bulk-progress-card').classList.remove('hidden');
   $('bulk-dashboard-link').classList.add('hidden');
-  $('bulk-progress-fill').style.width  = '0%';
-  $('bulk-progress-label').textContent = `0 / ${jobs.length} completed`;
+  setBulkBusy(true, 'main');
 
   // Build per-item rows
   const listEl = $('bulk-results-list');
   listEl.innerHTML = '';
-  const itemEls = jobs.map((job, i) => {
-    const li = document.createElement('li');
-    li.className = 'bulk-result-item';
-    li.innerHTML = `
-      <span class="bulk-status-dot bulk-dot-pending"></span>
-      <span class="bulk-item-url" title="${job.url}">${truncateUrl(job.url)}</span>
-      <span class="bulk-item-badge bulk-badge-pending">Pending</span>
-    `;
-    listEl.appendChild(li);
-    return li;
+  const entries = jobs.map(job => {
+    const itemEl = makeBulkRow(job);
+    listEl.appendChild(itemEl);
+    return { job, itemEl };
   });
 
-  let done = 0;
-  for (let i = 0; i < jobs.length; i++) {
-    const job    = jobs[i];
-    const itemEl = itemEls[i];
+  await runBulkJobs(entries, auth.token, 'main');
+}
 
-    itemEl.querySelector('.bulk-status-dot').className   = 'bulk-status-dot bulk-dot-active';
-    itemEl.querySelector('.bulk-item-badge').className   = 'bulk-item-badge bulk-badge-active';
-    itemEl.querySelector('.bulk-item-badge').textContent = 'Analyzing…';
-    itemEl.scrollIntoView({ block: 'nearest' });
+/**
+ * Re-run only the rows that errored, under the ORIGINAL batch id so the whole
+ * CSV stays one batch on the dashboard and its export is not split in two.
+ */
+async function handleBulkRetry() {
+  if (_bulkRunning || !_bulkFailed.length) return;
 
-    const result = job.type === 'linkedin'
-      ? await requestAnalyze({
-          action:        'ANALYZE_COMPANY_URL',
-          linkedinUrl:   job.url,
-          token:         auth.token,
-          userInputField: job.url,
-          batchId,
-        })
-      : await requestAnalyze({
-          action:        'ANALYZE_WEBSITE',
-          websiteUrl:    job.url,
-          linkedinUrl:   null,
-          token:         auth.token,
-          tabId:         null,
-          userInputField: job.url,
-          batchId,
-        });
+  const auth = await getStoredAuth();
+  if (!auth?.token) { syncAuthOverlay(); return; }
 
-    done++;
-    $('bulk-progress-fill').style.width  = `${Math.round((done / jobs.length) * 100)}%`;
-    $('bulk-progress-label').textContent = `${done} / ${jobs.length} completed`;
-
-    if (result.success) {
-      itemEl.querySelector('.bulk-status-dot').className   = 'bulk-status-dot bulk-dot-done';
-      itemEl.querySelector('.bulk-item-badge').className   = 'bulk-item-badge bulk-badge-done';
-      itemEl.querySelector('.bulk-item-badge').textContent = 'Done';
-      if (result.creditsRemaining != null) updateCreditsDisplay(result.creditsRemaining);
-    } else {
-      itemEl.querySelector('.bulk-status-dot').className   = 'bulk-status-dot bulk-dot-error';
-      itemEl.querySelector('.bulk-item-badge').className   = 'bulk-item-badge bulk-badge-error';
-      itemEl.querySelector('.bulk-item-badge').textContent = 'Error';
-      // The reason used to live only in the row's `title`, so it was invisible
-      // unless you hovered. Put it on a second line under the URL.
-      const reason = analyzeErrorText(result);
-      const reasonEl = document.createElement('span');
-      reasonEl.className  = 'bulk-item-reason';
-      reasonEl.textContent = reason;
-      itemEl.appendChild(reasonEl);
-      itemEl.title = reason;
-    }
-  }
-
-  _bulkRunning = false;
-  $('bulk-run-btn').disabled           = false;
-  $('bulk-run-spinner').style.display  = 'none';
-  $('bulk-run-text').textContent       = `Analyze All (${jobs.length})`;
-  
-  // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
-  $('bulk-dashboard-link').href = appUrl(APP.jobs);
-  $('bulk-dashboard-link').classList.remove('hidden');
+  const entries = _bulkFailed;
+  setBulkBusy(true, 'retry');
+  await runBulkJobs(entries, auth.token, 'retry');
 }
 
 // ─── Auto-detect on tab navigation ───────────────────────────────────────────

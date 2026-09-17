@@ -201,6 +201,13 @@ body {
 }
 .btn-secondary:hover:not(:disabled) { border-color: var(--color-accent); }
 
+/* The shared .spinner is white-on-accent. On a secondary button that is a
+   white ring on a pale surface — invisible. */
+.btn-secondary .spinner {
+  border-color: var(--color-border);
+  border-top-color: var(--color-accent);
+}
+
 /* ── Spinner ───────────────────────────────────────────────────────────────── */
 .spinner {
   display: none;

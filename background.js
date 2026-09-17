@@ -93,7 +93,9 @@ async function autoScrapeLinkedInPage(tabId, url) {
   } else {
     _setBadge(tabId, '!', '#ef5350');
     await _setSessionScrape({ tabId, linkedinUrl: canonicalUrl, status: 'ERROR', error: result.error, timestamp: Date.now() });
-    broadcast({ action: 'CI_AUTO_STATUS', status: 'ERROR', error: result.error });
+    // Carry the URL: without it the panel knows an auto-analysis failed but not
+    // WHICH company, so it cannot offer to run it again.
+    broadcast({ action: 'CI_AUTO_STATUS', status: 'ERROR', linkedinUrl: canonicalUrl, error: result.error });
   }
 
   // Auto-clear badge after 8 s
