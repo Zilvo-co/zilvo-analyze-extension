@@ -12,7 +12,7 @@
  * All communication with popup.js uses chrome.runtime.sendMessage / onMessage.
  */
 
-import { sleep, normalizeLinkedInUrl } from './helpers/utils.js';
+import { sleep, normalizeLinkedInUrl, isRetryableError } from './helpers/utils.js';
 import { API, apiUrl, ZILVO_APP } from './helpers/constants.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 
@@ -63,8 +63,9 @@ async function autoScrapeLinkedInPage(tabId, url) {
   await _setSessionScrape({ tabId, linkedinUrl: canonicalUrl, status: 'IN_PROGRESS' });
   broadcast({ action: 'CI_AUTO_STATUS', status: 'IN_PROGRESS', linkedinUrl: canonicalUrl });
 
-  // Wait for LinkedIn React content to finish rendering
-  await sleep(LINKEDIN_RENDER_DELAY);
+  // Brief settle only — extractUntilFound() below is what waits for LinkedIn's
+  // React content, so a long fixed sleep here just delayed every analysis.
+  await sleep(TAB_SETTLE_DELAY);
 
   // Confirm tab is still on the same page (user may have navigated away)
   try {
@@ -118,10 +119,20 @@ function _setBadge(tabId, text, color) {
 // ─── Tunable constants ────────────────────────────────────────────────────────
 const LINKEDIN_LOAD_TIMEOUT  = 30_000;   // max ms to wait for LinkedIn tab to reach "complete"
 const WEBSITE_LOAD_TIMEOUT   = 30_000;   // max ms to wait for company website tab
-const LINKEDIN_RENDER_DELAY  = 3_500;    // extra wait after "complete" for React content
+const LINKEDIN_SOFT_DEADLINE = 10_000;   // give up WAITING and extract anyway (SPA may never report "complete")
+const WEBSITE_SOFT_DEADLINE  = 12_000;   // ditto for company websites
 const WEBSITE_RENDER_DELAY   = 2_000;    // extra wait after "complete" for CSS / lazy images
+const TAB_SETTLE_DELAY       = 1_000;    // brief pause before the first extraction attempt
 const RETRY_LIMIT            = 2;        // total attempts (1 original + 1 retry)
 const RETRY_BACKOFF_MS       = 2_500;    // wait between retry attempts
+
+// Extraction polls instead of sleeping a fixed amount and hoping. LinkedIn
+// hydrates the About panel AFTER the tab reports "complete", so a single shot
+// at a fixed offset succeeded or failed run to run depending on nothing but
+// network speed and tab throttling — the whole reason analysis was flaky.
+const EXTRACT_POLL_INTERVAL  = 500;      // re-run the extractor this often
+const EXTRACT_POLL_SHORT     = 5_000;    // first look: is this view going to have the field at all?
+const EXTRACT_POLL_TIMEOUT   = 15_000;   // full budget once we are on a view that should have it
 
 // ─── Message router ───────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -212,12 +223,27 @@ function createBackgroundTab(url) {
   return chrome.tabs.create({ url, active: false });
 }
 
-/** Resolves when the tab reaches status "complete", or rejects on timeout/removal. */
+/**
+ * True for the blank page a tab shows before its real navigation starts.
+ *
+ * chrome.tabs.create can hand back a tab that already reports status
+ * "complete" for its placeholder, so waiting on status alone resolved
+ * INSTANTLY and the extractor then ran against an empty document. That is
+ * indistinguishable from "the page had no website on it".
+ */
+function isPlaceholderUrl(url) {
+  return !url || /^(about:blank|about:newtab|chrome:\/\/newtab)/i.test(url);
+}
+
+/**
+ * Resolves when the tab reaches status "complete" ON A REAL PAGE, or rejects on
+ * timeout/removal. The placeholder check is what makes "complete" trustworthy.
+ */
 function waitForTabLoad(tabId, timeout = 30_000) {
   return new Promise((resolve, reject) => {
     chrome.tabs.get(tabId, tab => {
       if (chrome.runtime.lastError) return reject(new Error('Tab not found'));
-      if (tab.status === 'complete') return resolve(tab);
+      if (tab.status === 'complete' && !isPlaceholderUrl(tab.url)) return resolve(tab);
 
       const timer = setTimeout(() => {
         chrome.tabs.onUpdated.removeListener(onUpdated);
@@ -225,8 +251,9 @@ function waitForTabLoad(tabId, timeout = 30_000) {
         reject(new Error(`Tab load timeout after ${timeout / 1000}s`));
       }, timeout);
 
-      function onUpdated(id, info) {
+      function onUpdated(id, info, updatedTab) {
         if (id !== tabId || info.status !== 'complete') return;
+        if (isPlaceholderUrl(updatedTab?.url)) return; // placeholder settling — the real navigation is still coming
         clearTimeout(timer);
         chrome.tabs.onUpdated.removeListener(onUpdated);
         chrome.tabs.onRemoved.removeListener(onRemoved);
@@ -350,19 +377,82 @@ async function extractFromTab(tabId) {
   }
 }
 
+/**
+ * Re-runs the extractor until it produces a website URL, or `timeout` elapses.
+ *
+ * Replaces `await sleep(3_500); extractOnce()`. That fixed offset landed before
+ * LinkedIn had hydrated whenever the network was cold or the tab was throttled,
+ * and nothing tried again — the same company succeeded or failed run to run for
+ * no reason the user could see. Polling returns the moment the field appears
+ * (so a warm page is FASTER than the old fixed wait) and keeps looking when it
+ * does not.
+ *
+ * Returns the last successful extraction even without a website, so callers can
+ * still use companyName / industry and can tell "page unreadable" (null) apart
+ * from "page read, no website on it".
+ */
+async function extractUntilFound(tabId, timeout = EXTRACT_POLL_TIMEOUT) {
+  const deadline = Date.now() + timeout;
+  let last = null;
+
+  for (;;) {
+    const data = await extractFromTab(tabId);
+    if (data) {
+      last = data;
+      if (data.websiteUrl) return data;
+    }
+    if (Date.now() + EXTRACT_POLL_INTERVAL >= deadline) return last;
+    await sleep(EXTRACT_POLL_INTERVAL);
+  }
+}
+
+/**
+ * Waits for a tab to load, but never longer than `softDeadline`.
+ *
+ * LinkedIn's SPA frequently never reports status "complete" in an inactive
+ * background tab, so the wait has to be capped. The load error is deliberately
+ * swallowed: whatever HAS rendered is still worth extracting from, and the
+ * poll above is what decides whether the data actually arrived.
+ */
+async function waitForTabOrDeadline(tabId, timeout, softDeadline) {
+  await Promise.race([
+    waitForTabLoad(tabId, timeout).catch(() => {}),
+    sleep(softDeadline),
+  ]);
+}
+
+/**
+ * Opens `url` in an inactive tab that auto-scrape will ignore.
+ *
+ * The tab is created BLANK and registered before it is navigated. Creating it
+ * on the target URL and registering afterwards left a window in which the
+ * tab's "complete" event fired first — auto-scrape then saw an unmanaged
+ * LinkedIn tab and started a SECOND analysis of the same company, charging the
+ * user twice and closing the tab out from under the first one.
+ */
+async function createManagedTab(url) {
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+  _managedTabIds.add(tab.id);
+  try {
+    await chrome.tabs.update(tab.id, { url });
+  } catch (err) {
+    // The caller never receives the id, so its finally block cannot clean up —
+    // do it here or the blank tab is orphaned in the user's window.
+    _managedTabIds.delete(tab.id);
+    await safeCloseTab(tab.id);
+    throw err;
+  }
+  return tab.id;
+}
+
 /** Opens the About view in a background tab and extracts from there. */
 async function extractFromAboutTab(aboutUrl) {
   let tabId = null;
   try {
-    const tab = await chrome.tabs.create({ url: aboutUrl, active: false });
-    tabId = tab.id;
-    _managedTabIds.add(tabId); // keep auto-scrape off a tab we opened
-    await Promise.race([
-      waitForTabLoad(tabId, LINKEDIN_LOAD_TIMEOUT).catch(() => {}),
-      sleep(10_000),
-    ]);
-    await sleep(LINKEDIN_RENDER_DELAY);
-    return await extractFromTab(tabId);
+    tabId = await createManagedTab(aboutUrl);
+    await waitForTabOrDeadline(tabId, LINKEDIN_LOAD_TIMEOUT, LINKEDIN_SOFT_DEADLINE);
+    await sleep(TAB_SETTLE_DELAY);
+    return await extractUntilFound(tabId, EXTRACT_POLL_TIMEOUT);
   } catch (err) {
     console.warn('[Zilvo] About-tab extraction failed:', err.message);
     return null;
@@ -371,8 +461,51 @@ async function extractFromAboutTab(aboutUrl) {
   }
 }
 
+/**
+ * True when a failed attempt is worth repeating.
+ *
+ * Only TRANSIENT failures qualify — an unreadable page, a load timeout, a
+ * network blip. Two cases are deliberately excluded:
+ *
+ *   • Anything the server answered (`result.status` is set). A 4xx repeats
+ *     itself, and re-POSTing after a 5xx risks submitting an analysis the
+ *     server already accepted and charged for.
+ *   • "No website URL found". extractUntilFound() already polled the About
+ *     view for the full budget, so this is now evidence the company has not
+ *     listed a website — not evidence we looked too early. Retrying it only
+ *     doubled the time to report a true negative and doubled the LinkedIn page
+ *     loads, which is what gets a bulk run rate-limited into auth walls.
+ */
+function isRetryableFailure(result) {
+  if (!result || result.success || result.status) return false;
+  return isRetryableError({ message: result.error || '' });
+}
+
+/**
+ * Analyze with the retry RETRY_LIMIT / RETRY_BACKOFF_MS have always described.
+ *
+ * Those constants were declared and never referenced, so a single transient
+ * miss — a page that had not hydrated, a LinkedIn interstitial, a network
+ * blip — became a hard failure with no second chance.
+ */
 async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
-  let liData = await extractFromTab(tabId);
+  let result;
+  for (let attempt = 1; attempt <= RETRY_LIMIT; attempt++) {
+    result = await analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId);
+    if (!isRetryableFailure(result)) return result;
+    if (attempt < RETRY_LIMIT) {
+      console.warn(`[Zilvo] attempt ${attempt}/${RETRY_LIMIT} failed — ${result.error} — retrying in ${RETRY_BACKOFF_MS}ms`);
+      await sleep(RETRY_BACKOFF_MS);
+    }
+  }
+  return result;
+}
+
+async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId) {
+  // Short first look. If this tab is the company HOME view the Website field
+  // will NEVER appear on it however long we wait, so spending the full poll
+  // budget here would only delay the /about/ fallback that does have the data.
+  let liData = await extractUntilFound(tabId, EXTRACT_POLL_SHORT);
 
   if (!liData) return { success: false, error: 'Could not read the LinkedIn page. Make sure it is fully loaded.' };
 
@@ -380,6 +513,12 @@ async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
   // the company HOME tab reaches "complete", so the extractor ran against a DOM
   // that never contained a website — and we told the user the company had not
   // listed one while their screen showed it. Check /about/ before believing it.
+  if (!liData.websiteUrl && isAboutView(liData.linkedinUrl)) {
+    // Already on the right view — the field is simply still rendering. Spend
+    // the rest of the budget here rather than opening a redundant second tab.
+    liData = await extractUntilFound(tabId, EXTRACT_POLL_TIMEOUT - EXTRACT_POLL_SHORT) || liData;
+  }
+
   if (!liData.websiteUrl && !isAboutView(liData.linkedinUrl)) {
     const aboutUrl = aboutUrlFor(liData.linkedinUrl || userInputField);
     if (aboutUrl) {
@@ -424,14 +563,27 @@ async function scrapeWebsiteInBackground(url) {
   try {
     const tab = await createBackgroundTab(url);
     siteTabId = tab.id;
-    await waitForTabLoad(siteTabId, WEBSITE_LOAD_TIMEOUT);
+    // Cap the wait instead of throwing at 30 s. A slow site used to yield NO
+    // page content at all; partially rendered content is worth far more to the
+    // analysis than nothing.
+    await waitForTabOrDeadline(siteTabId, WEBSITE_LOAD_TIMEOUT, WEBSITE_SOFT_DEADLINE);
     await sleep(WEBSITE_RENDER_DELAY);
+
+    // Confirm the tab actually left its placeholder. Without this a tab that
+    // never navigated was scraped as an empty document and reported as a site
+    // with no content.
+    const current = await chrome.tabs.get(siteTabId).catch(() => null);
+    if (!current || isPlaceholderUrl(current.url)) {
+      console.warn('[Zilvo] website tab never navigated away from', current?.url ?? '(gone)');
+      return undefined;
+    }
+
     const [res] = await chrome.scripting.executeScript({
       target: { tabId: siteTabId, allFrames: false },
       func:   websiteContentExtractorFn,
     });
     const content = res?.result || '';
-    console.log('[Zilvo] website scrape:', content ? `${content.length} chars` : 'empty');
+    console.log('[Zilvo] website scrape:', current.url, content ? `${content.length} chars` : 'empty');
     return content || undefined;
   } catch (err) {
     console.warn('[Zilvo] scrapeWebsiteInBackground failed:', err.message);
@@ -451,17 +603,13 @@ async function analyzeLinkedInUrl(linkedinUrl, token, userInputField, batchId) {
     if (!match) return { success: false, error: 'Invalid LinkedIn company URL.' };
     const url = `https://www.linkedin.com/company/${match[1].replace(/\/$/, '')}/about/`;
 
-    const tab = await chrome.tabs.create({ url, active: false });
-    tabId = tab.id;
-    _managedTabIds.add(tabId); // prevent auto-scrape from double-processing this tab
+    tabId = await createManagedTab(url); // registered before navigating — see createManagedTab
 
-    // LinkedIn's SPA often won't fire status=complete in an inactive background tab.
-    // Race: proceed as soon as the tab completes OR after 10s, whichever is first.
-    await Promise.race([
-      waitForTabLoad(tabId, 60_000).catch(() => {}),
-      sleep(10_000),
-    ]);
-    await sleep(3_500); // wait for React to render company data
+    // LinkedIn's SPA often won't fire status=complete in an inactive background
+    // tab, so the wait is capped. extractUntilFound() downstream is what waits
+    // for the company data itself.
+    await waitForTabOrDeadline(tabId, LINKEDIN_LOAD_TIMEOUT, LINKEDIN_SOFT_DEADLINE);
+    await sleep(TAB_SETTLE_DELAY);
 
     return await analyzeLinkedInCompany(tabId, token, userInputField || linkedinUrl, batchId);
   } catch (err) {
