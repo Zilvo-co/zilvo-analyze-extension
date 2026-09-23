@@ -1,6 +1,7 @@
 /**
- * popup.js — 3-tab popup controller
+ * popup.js — 4-tab popup controller
  *
+ * Tab 0 (lists)       — ICP analysis of a whole LinkedIn extraction
  * Tab 1 (linkedin)    — LinkedIn company auto-detect + analyze
  * Tab 2 (website)     — Website auto-detect + analyze
  * Tab 3 (manual)      — Bulk CSV upload for LinkedIn & website URLs
@@ -14,7 +15,7 @@ const $ = id => document.getElementById(id);
 
 // ─── Shared state ─────────────────────────────────────────────────────────────
 let _detection = null; // result from GET_TAB_DETECTION
-let _activeTab  = 'linkedin';
+let _activeTab  = 'lists';
 
 // ─── Init (deferred to end of file so all const declarations are initialized) ─
 
@@ -98,15 +99,21 @@ async function initAuth() {
   if (auth?.token) {
     showUserBadge(auth.user);
     await initIcpSelector();
+    // Before detection, so a pending "Open in Zilvo Analyze" wins over the
+    // auto-switch that would otherwise move the user to the LinkedIn tab.
+    // applyPendingList force-loads the lists itself, so only load here when
+    // there was no pending request — otherwise every open fetched twice.
+    const jumped = await applyPendingList();
+    if (!jumped) await loadLists();
     await runDetection();
   }
   syncAuthOverlay();
 }
 
 function syncAuthOverlay() {
-  const isCI       = _activeTab === 'linkedin' || _activeTab === 'website' || _activeTab === 'manual';
+  // Every tab needs an account, so the overlay is purely a login gate.
   const loggedIn   = !userBadge.classList.contains('hidden');
-  const showOverlay = isCI && !loggedIn;
+  const showOverlay = !loggedIn;
 
   authOverlay.classList.toggle('hidden', !showOverlay);
 
@@ -143,6 +150,10 @@ async function onAuthSynced(msg) {
     showUserBadge(msg.user);
     await initIcpSelector();
     syncAuthOverlay();
+    // A user who clicked "Open in Zilvo Analyze" while signed out lands here
+    // after logging in — honour that request instead of dropping it.
+    const jumped = await applyPendingList();
+    if (!jumped) await loadLists({ force: true });
     if (!_detection) await runDetection();
   }
 }
@@ -286,8 +297,11 @@ async function runDetection() {
   const result = await chrome.runtime.sendMessage({ action: 'GET_TAB_DETECTION' });
   _detection = result;
 
-  // Auto-switch to the relevant tab based on what was detected
-  if (result.type === 'LINKEDIN_COMPANY') {
+  // Auto-switch to the relevant tab based on what was detected — but never
+  // away from a list the user is part-way through setting up.
+  if (_listsBusy || _selectedList) {
+    // leave the Lists tab alone
+  } else if (result.type === 'LINKEDIN_COMPANY') {
     switchTab('linkedin');
   } else if (result.type === 'WEBSITE' || result.type === 'WEBSITE_WITH_LINKEDIN') {
     switchTab('website');
@@ -684,6 +698,368 @@ function toggleSection(bodyEl, chevronEl, triggerEl) {
   bodyEl.classList.toggle('hidden', isOpen);
   chevronEl.classList.toggle('open', !isOpen);
   triggerEl.setAttribute('aria-expanded', String(!isOpen));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LISTS TAB (ICP analysis of a LinkedIn extraction)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The user picks a list they already extracted and a Project, and Zilvo scores
+// every distinct company behind it against that Project's ICP.
+//
+// The run is driven from HERE, not from the web app, for a concrete reason: a
+// LinkedIn extraction gives us company URLs, and the analyzer needs each
+// company's WEBSITE. Only this extension can open a LinkedIn company page to
+// find one. So the web app educates and shows results; the extension starts the
+// work — reusing the very same per-company pipeline the Upload tab already uses.
+
+let _lists          = [];
+let _selectedList   = null;
+let _listsProjects  = [];
+let _listsBusy      = false;
+let _listsBatchId   = null;
+/** First click on an already-analyzed list arms the button; second click runs. */
+let _listsRerunArmed = false;
+
+const PENDING_LIST_KEY = 'zilvo_pending_list';
+/** A request older than this is stale — the user has moved on. Long enough to
+ * survive the sign-in detour a logged-out click takes. */
+const PENDING_LIST_TTL_MS = 10 * 60_000;
+
+function initListsTab() {
+  $('lists-refresh-btn').addEventListener('click', () => loadLists({ force: true }));
+  $('lists-back-btn').addEventListener('click', () => selectList(null));
+  $('lists-progress-back-btn').addEventListener('click', () => selectList(null));
+  $('lists-analyze-btn').addEventListener('click', () => handleListAnalyze());
+
+  // An already-open panel reacts live to "Open in Zilvo Analyze".
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'ZILVO_OPEN_LIST') applyPendingList();
+  });
+}
+
+/**
+ * Jump to the list the web app asked for.
+ *
+ * "Open in Zilvo Analyze" on an extraction page stores the id; whether the panel
+ * opened itself or the user clicked the toolbar icon afterwards, it lands here
+ * and the right list is already selected. Consumed once, so reopening the panel
+ * later does not drag the user back to an old list.
+ */
+async function applyPendingList() {
+  const stored = (await chrome.storage.local.get(PENDING_LIST_KEY))[PENDING_LIST_KEY];
+  if (!stored?.extractionId) return false;
+  await chrome.storage.local.remove(PENDING_LIST_KEY);
+  if (Date.now() - (stored.at ?? 0) > PENDING_LIST_TTL_MS) return false;
+
+  switchTab('lists');
+  await loadLists({ force: true });
+
+  const match = _lists.find((l) => l.id === stored.extractionId);
+  if (match) {
+    await selectList(match);
+  } else {
+    // The list is gone (deleted, or another account) — say so rather than
+    // silently showing the picker as if nothing was asked for.
+    $('lists-error').textContent = `Could not find "${stored.extractionName || 'that extraction'}" in this account.`;
+    $('lists-error').classList.remove('hidden');
+  }
+  // Either way the lists were just (re)loaded — the caller must not fetch again.
+  return true;
+}
+
+/** Authenticated GET against the Zilvo API, returning parsed JSON or null. */
+async function zilvoGet(path) {
+  const auth = await getStoredAuth();
+  if (!auth?.token) return null;
+  try {
+    const res = await fetch(apiUrl(path), {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    });
+    if (!res.ok) {
+      console.warn('[Zilvo] GET', path, '->', res.status);
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.error('[Zilvo] GET', path, 'failed:', err);
+    return null;
+  }
+}
+
+async function loadLists({ force = false } = {}) {
+  if (_lists.length && !force) return;
+
+  $('lists-loading').classList.remove('hidden');
+  $('lists-empty').classList.add('hidden');
+  $('lists-error').classList.add('hidden');
+  $('lists-items').classList.add('hidden');
+
+  const data = await zilvoGet(API.extractionsForAnalysis);
+  $('lists-loading').classList.add('hidden');
+
+  if (!data) {
+    $('lists-error').textContent = 'Could not load your extractions. Check your connection and try again.';
+    $('lists-error').classList.remove('hidden');
+    return;
+  }
+
+  _lists = data.extractions || [];
+  if (!_lists.length) {
+    $('lists-empty').classList.remove('hidden');
+    return;
+  }
+
+  renderLists();
+}
+
+function renderLists() {
+  const ul = $('lists-items');
+  ul.innerHTML = '';
+
+  for (const list of _lists) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lists-item';
+
+    const name = document.createElement('span');
+    name.className = 'lists-item-name';
+    name.textContent = list.name;
+    btn.appendChild(name);
+
+    const meta = document.createElement('span');
+    meta.className = 'lists-item-meta';
+    // An account extraction has no people — every row is a company, so showing
+    // "0 leads" would be noise.
+    const counts = list.type === 'accounts'
+      ? `${list.companies.toLocaleString()} companies`
+      : `${list.leads.toLocaleString()} leads · ${list.companies.toLocaleString()} companies`;
+    meta.appendChild(
+      document.createTextNode(
+        `${counts} · ` +
+        new Date(list.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+      )
+    );
+
+    // Say plainly whether this list was already analysed, so nobody pays twice.
+    if (list.analysis?.started) {
+      const chip = document.createElement('span');
+      chip.className = 'lists-chip lists-chip-done';
+      chip.textContent = `ICP analyzed ${list.analysis.completed}/${list.analysis.total}`;
+      meta.appendChild(chip);
+    }
+    if (list.verificationStatus === 'COMPLETED') {
+      const chip = document.createElement('span');
+      chip.className = 'lists-chip lists-chip-verified';
+      chip.textContent = 'Verified';
+      meta.appendChild(chip);
+    }
+    btn.appendChild(meta);
+
+    btn.addEventListener('click', () => selectList(list));
+    li.appendChild(btn);
+    ul.appendChild(li);
+  }
+
+  ul.classList.remove('hidden');
+}
+
+async function selectList(list) {
+  if (_listsBusy) return;
+  _selectedList = list;
+  _listsRerunArmed = false;
+
+  // A stale "could not find …" from an earlier deep link must not sit over
+  // whichever view is shown next.
+  $('lists-error').classList.add('hidden');
+  $('lists-picker-card').classList.toggle('hidden', !!list);
+  $('lists-selected-card').classList.toggle('hidden', !list);
+  $('lists-progress-card').classList.add('hidden');
+  $('lists-analyze-btn').textContent = 'Analyze ICP Fit';
+
+  if (!list) return;
+
+  // A paid re-run deserves a warning before the button does anything.
+  $('lists-rerun-note').classList.toggle('hidden', !list.analysis?.started);
+
+  $('lists-sel-name').textContent = list.name;
+  $('lists-sel-counts').textContent = list.type === 'accounts'
+    ? `${list.companies.toLocaleString()} companies`
+    : `${list.leads.toLocaleString()} leads · ${list.companies.toLocaleString()} unique companies`;
+
+  await loadProjects();
+}
+
+/**
+ * The account's projects. A Project carries the ICP a run is scored against, so
+ * picking one here is what makes the result meaningful.
+ */
+async function loadProjects() {
+  const select = $('lists-project-select');
+  const data = await zilvoGet(API.projects);
+  _listsProjects = data?.projects || [];
+
+  select.innerHTML = '';
+  const empty = !_listsProjects.length;
+  $('lists-project-empty').classList.toggle('hidden', !empty);
+  select.classList.toggle('hidden', empty);
+  $('lists-analyze-btn').disabled = empty;
+
+  for (const project of _listsProjects) {
+    const option = document.createElement('option');
+    option.value = project._id;
+    option.textContent = project.companyName || 'Untitled project';
+    if (project._id === data?.activeId) option.selected = true;
+    select.appendChild(option);
+  }
+}
+
+async function handleListAnalyze() {
+  if (_listsBusy || !_selectedList) return;
+
+  const auth = await getStoredAuth();
+  if (!auth?.token) return;
+
+  const projectId = $('lists-project-select').value;
+  if (!projectId) return;
+
+  // Re-running an analyzed list charges again, so the first click only arms
+  // the button — the warning note above it says why.
+  if (_selectedList.analysis?.started && !_listsRerunArmed) {
+    _listsRerunArmed = true;
+    $('lists-analyze-btn').textContent = 'Click again to re-run (charges again)';
+    return;
+  }
+
+  _listsBusy = true;
+  $('lists-analyze-btn').disabled = true;
+  $('lists-analyze-btn').textContent = 'Starting…';
+  $('lists-back-btn').disabled = true;
+
+  try {
+    // Ask the server for the DISTINCT companies — two leads at the same
+    // employer must not be analysed (or charged for) twice.
+    const data = await zilvoGet(`${API.extractions}/${_selectedList.id}/companies`);
+
+    // null = the request failed; an empty array = the list really has nothing
+    // to analyze. Reporting a failure as "nothing to analyze" hides outages.
+    if (!data) {
+      $('lists-sel-counts').textContent =
+        'Could not load the companies for this list. Check your connection and try again.';
+      return;
+    }
+    const companies = data.companies || [];
+
+    if (!companies.length) {
+      $('lists-sel-counts').textContent =
+        'No companies with a LinkedIn page in this list — nothing to analyze.';
+      return;
+    }
+
+    $('lists-selected-card').classList.add('hidden');
+    $('lists-progress-card').classList.remove('hidden');
+
+    // One batch per run, so the whole list stays one group (and one CSV) on the
+    // Analysis Jobs page — the same contract the Upload tab uses.
+    _listsBatchId = `extraction-${_selectedList.id}-${Date.now().toString(36)}`;
+
+    await runListJobs(companies, auth.token, projectId);
+  } finally {
+    _listsBusy = false;
+    _listsRerunArmed = false;
+    $('lists-analyze-btn').disabled = false;
+    $('lists-analyze-btn').textContent = 'Analyze ICP Fit';
+    $('lists-back-btn').disabled = false;
+  }
+}
+
+/**
+ * Run one company at a time through the existing per-company pipeline.
+ *
+ * Sequential on purpose: each job opens a LinkedIn tab and a website tab, and
+ * running them in parallel is how you get rate-limited.
+ */
+async function runListJobs(companies, token, projectId) {
+  const list = $('lists-results');
+  list.innerHTML = '';
+
+  const rows = companies.map((company) => {
+    const li = document.createElement('li');
+    li.className = 'bulk-result-item';
+
+    const dot = document.createElement('span');
+    dot.className = 'bulk-status-dot bulk-dot-pending';
+    const name = document.createElement('span');
+    name.className = 'bulk-item-url';
+    name.textContent = company.name || company.linkedinUrl;
+    const badge = document.createElement('span');
+    badge.className = 'bulk-item-badge bulk-badge-pending';
+    badge.textContent = 'Queued';
+
+    li.append(dot, name, badge);
+    list.appendChild(li);
+    return { company, dot, badge };
+  });
+
+  const setRow = (row, state, label) => {
+    row.dot.className = `bulk-status-dot bulk-dot-${state}`;
+    row.badge.className = `bulk-item-badge bulk-badge-${state}`;
+    row.badge.textContent = label;
+  };
+
+  let done = 0;
+  let outOfCredits = false;
+  $('lists-progress-fill').style.width = '0%';
+  $('lists-progress-label').textContent = `0 / ${companies.length} companies`;
+
+  for (const row of rows) {
+    // Once the account is out of credits every further dispatch 402s too —
+    // stop instead of marching the rest of the list into "Failed".
+    if (outOfCredits) {
+      setRow(row, 'error', 'Skipped — no credits');
+      continue;
+    }
+
+    setRow(row, 'active', 'Analyzing…');
+
+    const result = await requestAnalyze({
+      action: 'ANALYZE_COMPANY_URL',
+      linkedinUrl: row.company.linkedinUrl,
+      token,
+      userInputField: row.company.linkedinUrl,
+      batchId: _listsBatchId,
+      // What makes this job show up under the extraction, and be scored
+      // against the project the user chose rather than whichever is active.
+      run: {
+        source: 'linkedin_extraction',
+        sourceExtractionId: _selectedList.id,
+        projectId,
+      },
+    });
+
+    if (result?.status === 402) outOfCredits = true;
+    setRow(
+      row,
+      result?.success ? 'done' : 'error',
+      result?.success ? 'Queued' : outOfCredits ? 'Failed — no credits' : 'Failed'
+    );
+
+    done++;
+    $('lists-progress-fill').style.width = `${Math.round((done / companies.length) * 100)}%`;
+    $('lists-progress-label').textContent = `${done} / ${companies.length} companies`;
+
+    if (typeof result?.creditsRemaining === 'number') {
+      await updateStoredCredits(result.creditsRemaining);
+      userCredits.textContent = `${result.creditsRemaining} cr`;
+    }
+  }
+
+  $('lists-progress-label').textContent = outOfCredits
+    ? `${done} / ${companies.length} dispatched — stopped: not enough credits. Top up on Zilvo and retry.`
+    : `${done} / ${companies.length} companies queued — analysis continues in the cloud.`;
+  // The list it was started from now shows analysis progress.
+  await loadLists({ force: true });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1095,6 +1471,7 @@ function initTabWatcher() {
 (async () => {
   applyZilvoLinks();
   initTabBar();
+  initListsTab();
   initManualTab();
   initTabWatcher();
   await initAuth();

@@ -42,6 +42,29 @@
       syncLogin(d.token, localStorage.getItem('user'));
     } else if (d.type === 'zilvo_auth_logout') {
       syncLogout();
+    } else if (d.type === 'zilvo_open_analyze') {
+      // "Open in Zilvo Analyze" on an extraction page. The web app cannot talk
+      // to the extension directly (no externally_connectable), so the request
+      // rides the same page->content-script->background bridge auth uses.
+      //
+      // The ack is what tells the page the extension is installed at all: no
+      // reply within its timeout and it falls back to written instructions.
+      chrome.runtime
+        .sendMessage({
+          action: 'ZILVO_OPEN_ANALYZE',
+          extractionId: String(d.extractionId || ''),
+          extractionName: String(d.extractionName || ''),
+        })
+        .then((res) => {
+          window.postMessage(
+            { type: 'zilvo_open_analyze_ack', opened: !!(res && res.opened) },
+            window.location.origin
+          );
+        })
+        .catch(() => {
+          // Background asleep or extension reloading — stay silent and let the
+          // page time out into its fallback.
+        });
     }
   });
 })();

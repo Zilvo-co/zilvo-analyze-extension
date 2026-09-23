@@ -61,12 +61,21 @@ export const API = {
   // The user's saved positionings. `${API.icp}/${id}/default` sets the account
   // default — the same endpoint the web app's My ICP page uses.
   icp:     '/api/company-intelligence/icp',
+  // Projects — a Project carries the ICP that scores a run. `${API.projects}/${id}`
+  // with { setActive: true } switches the account default.
+  projects: '/api/projects',
+  // LinkedIn extractions available to analyze (the Lists tab), and the distinct
+  // companies behind one of them: `${API.extractions}/${id}/companies`.
+  extractionsForAnalysis: '/api/extractions/for-analysis',
+  extractions: '/api/extractions',
 };
 
 /** Web-app pages, relative to ZILVO_APP. Opened in tabs, never fetched. */
 export const APP = {
   login:          '/login',
   signup:         '/signup',
+  // Dashboard — where Projects are created (the Lists tab's empty state).
+  dashboard:      '/dashboard',
   forgotPassword: '/forgot-password',
   billing:        '/billing',
   companies:      '/tools/company-intelligence/companies',

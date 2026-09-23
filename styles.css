@@ -485,17 +485,30 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 9px 8px;
+  /* "Extracted Lists" / "Manual / Upload" are the widest labels; tight gap +
+     padding keep all four tabs on one line down to a ~330px panel, and
+     min-width lets flexbox shrink a tab below its text width instead of
+     overflowing the bar. */
+  gap: 4px;
+  padding: 9px 4px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--color-muted);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   cursor: pointer;
   transition: color var(--transition), border-color var(--transition);
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
+}
+.tab-btn svg { flex-shrink: 0; }
+/* At the side panel's narrow end the four labels alone fill the bar — the
+   icons are decoration, so they go first. */
+@media (max-width: 400px) {
+  .tab-bar .tab-btn svg { display: none; }
 }
 .tab-btn:hover   { color: var(--color-text); }
 .tab-btn.active  { color: var(--color-accent); border-bottom-color: var(--color-accent); }
@@ -752,6 +765,71 @@ body {
 .bulk-badge-active  { color: var(--color-accent);  background: rgba(108,99,255,0.12); }
 .bulk-badge-done    { color: var(--color-success);  background: rgba(76,175,80,0.12); }
 .bulk-badge-error   { color: var(--color-error);    background: rgba(239,83,80,0.12); }
+
+/* ── Extracted Lists ───────────────────────────────────────────────────────── */
+#lists-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* One extraction. A button, not a div — the whole row is the control. */
+.lists-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.lists-item:hover { border-color: var(--color-border-focus); background: var(--color-card); }
+.lists-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+.lists-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lists-item-meta {
+  font-size: 10px;
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* "Analyzed" / "Verified" markers on a row. */
+.lists-chip {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.lists-chip-done     { color: var(--color-success); background: rgba(76,175,80,0.12); }
+.lists-chip-verified { color: var(--color-accent);  background: rgba(108,99,255,0.12); }
+
+/* The selected list's name, in the confirm step. */
+.lists-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
 
 /* ── Inline link button ────────────────────────────────────────────────────── */
 .link-btn {

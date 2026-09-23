@@ -36,7 +36,13 @@
 
     <!-- ── Tab bar ──────────────────────────────────────────────────────────── -->
     <nav class="tab-bar">
-      <button class="tab-btn active" data-tab="linkedin">
+      <button class="tab-btn active" data-tab="lists">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+          <path d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zM.5 12.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm0-4a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm0-4a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z"/>
+        </svg>
+        Extracted Lists
+      </button>
+      <button class="tab-btn" data-tab="linkedin">
         <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
           <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248S2.4 3.226 2.4 3.934c0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016l.016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"/>
         </svg>
@@ -53,7 +59,7 @@
           <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
           <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
         </svg>
-        Manual
+        Manual / Upload
       </button>
     </nav>
 
@@ -101,8 +107,72 @@
       </div>
     </div>
 
+    <!-- ══════════════════ TAB 0 — EXTRACTED LISTS ═════════════════════════════ -->
+    <!-- ICP analysis of a whole LinkedIn extraction. The extension is the only
+         thing that can resolve a LinkedIn company URL to the website the
+         analyzer needs, so the run is started here, never from the web app. -->
+    <div id="tab-lists" class="tab-content">
+      <div class="main">
+
+        <!-- Step 1 — pick a list (account extractions only — an account list
+             is a complete set of companies, so every row can be scored) -->
+        <div class="card" id="lists-picker-card">
+          <div class="section-label">Your account extractions</div>
+          <p class="hint">Analyze the companies in an account list you already extracted — no CSV export needed.</p>
+
+          <div id="lists-loading" class="empty-note">Loading your extractions…</div>
+          <div id="lists-empty" class="empty-note hidden">
+            No account extractions yet. Extract accounts with the Zilvo LinkedIn Extractor first — ICP analysis runs on account lists.
+          </div>
+          <p id="lists-error" class="hint result-error hidden" role="alert"></p>
+          <ul id="lists-items" class="hidden"></ul>
+
+          <button id="lists-refresh-btn" class="btn btn-secondary" type="button">Refresh</button>
+        </div>
+
+        <!-- Step 2 — confirm the list, pick a project, start -->
+        <div class="card hidden" id="lists-selected-card">
+          <div class="section-label">Selected list</div>
+          <p class="lists-name" id="lists-sel-name"></p>
+          <p class="hint" id="lists-sel-counts"></p>
+
+          <div class="input-row" style="margin-top:12px">
+            <label class="field-label" for="lists-project-select">Project</label>
+            <select id="lists-project-select" class="input"></select>
+            <p class="hint">Your Project contains the ICP Zilvo will use to categorize these companies.</p>
+          </div>
+          <p id="lists-project-empty" class="hint hidden">
+            No projects yet —
+            <a data-zilvo-link="dashboard" target="_blank" rel="noopener" class="info-link">create one on your Zilvo dashboard →</a>
+          </p>
+
+          <!-- Shown when this list was already analysed: a re-run charges again,
+               so the button arms on the first click and runs on the second. -->
+          <p id="lists-rerun-note" class="hint result-error hidden" role="alert">
+            This list was already analyzed. Running it again will charge credits for every company again.
+          </p>
+
+          <button id="lists-analyze-btn" class="btn btn-amber" type="button">Analyze ICP Fit</button>
+          <button id="lists-back-btn" class="btn btn-secondary" type="button">Choose a different list</button>
+        </div>
+
+        <!-- Step 3 — progress -->
+        <div class="card hidden" id="lists-progress-card">
+          <div class="section-label">Progress</div>
+          <div class="progress-track"><div class="progress-fill" id="lists-progress-fill"></div></div>
+          <p class="hint" id="lists-progress-label">0 / 0 companies</p>
+          <ul id="lists-results" class="bulk-results"></ul>
+          <a id="lists-jobs-link" data-zilvo-link="jobs" target="_blank" rel="noopener" class="info-link">
+            View analysis jobs in Zilvo →
+          </a>
+          <button id="lists-progress-back-btn" class="btn btn-secondary" type="button">Back to lists</button>
+        </div>
+
+      </div>
+    </div>
+
     <!-- ══════════════════ TAB 1 — LINKEDIN COMPANY ═══════════════════════════ -->
-    <div id="tab-linkedin" class="tab-content">
+    <div id="tab-linkedin" class="tab-content hidden">
       <div class="main">
 
         <!-- Detection card -->

@@ -108,6 +108,8 @@ async function autoScrapeLinkedInPage(tabId, url) {
 // origin check getStoredAuth() enforces — a foreign token would stay live here
 // while the popup rejected it.
 const _AUTH_KEY = 'zilvo_auth';
+// The extraction the web app asked us to open, held until the panel reads it.
+const _PENDING_LIST_KEY = 'zilvo_pending_list';
 
 async function _setSessionScrape(data) {
   try { await chrome.storage.session.set({ lastCIScrape: data }); } catch { /* session API may be unavailable */ }
@@ -172,7 +174,7 @@ async function routeMessage(message, sender, sendResponse) {
         break;
 
       case 'ANALYZE_COMPANY_URL':
-        sendResponse(await analyzeLinkedInUrl(message.linkedinUrl, message.token, message.userInputField, message.batchId));
+        sendResponse(await analyzeLinkedInUrl(message.linkedinUrl, message.token, message.userInputField, message.batchId, message.run));
         break;
 
       case 'ANALYZE_WEBSITE':
@@ -207,6 +209,43 @@ async function routeMessage(message, sender, sendResponse) {
         broadcast({ action: 'ZILVO_AUTH_SYNCED', loggedOut: true });
         sendResponse({ success: true });
         break;
+
+      // "Open in Zilvo Analyze" from an extraction page in the web app.
+      case 'ZILVO_OPEN_ANALYZE': {
+        if (!isAppOrigin(sender)) {
+          sendResponse({ success: false, opened: false, error: 'origin mismatch' });
+          break;
+        }
+        // Remember which list was asked for, so the panel lands on it whether it
+        // opens now or the user clicks the toolbar icon a moment later. This is
+        // the part that always works.
+        await chrome.storage.local.set({
+          [_PENDING_LIST_KEY]: {
+            extractionId: message.extractionId,
+            extractionName: message.extractionName,
+            at: Date.now(),
+          },
+        });
+
+        // Chrome only allows sidePanel.open() in response to a user gesture, and
+        // a gesture in the PAGE does not always carry into the extension. Try,
+        // and report honestly whether it worked — the page shows written
+        // instructions when it did not.
+        let opened = false;
+        try {
+          // sender.tab can be absent (e.g. the message ever arrives from a
+          // non-tab context) — treat that as "could not open", not a crash.
+          if (sender?.tab?.id == null) throw new Error('no sender tab');
+          await chrome.sidePanel.open({ tabId: sender.tab.id });
+          opened = true;
+        } catch (err) {
+          console.info('[Zilvo] sidePanel.open refused (needs a user gesture):', err?.message);
+        }
+        // Already-open panels pick the list up immediately.
+        broadcast({ action: 'ZILVO_OPEN_LIST', extractionId: message.extractionId });
+        sendResponse({ success: true, opened });
+        break;
+      }
 
       default:
         sendResponse({ success: false, error: `Unknown action: ${message.action}` });
@@ -490,10 +529,10 @@ function isRetryableFailure(result) {
  * miss — a page that had not hydrated, a LinkedIn interstitial, a network
  * blip — became a hard failure with no second chance.
  */
-async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
+async function analyzeLinkedInCompany(tabId, token, userInputField, batchId, run = {}) {
   let result;
   for (let attempt = 1; attempt <= RETRY_LIMIT; attempt++) {
-    result = await analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId);
+    result = await analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId, run);
     if (!isRetryableFailure(result)) return result;
     if (attempt < RETRY_LIMIT) {
       console.warn(`[Zilvo] attempt ${attempt}/${RETRY_LIMIT} failed — ${result.error} — retrying in ${RETRY_BACKOFF_MS}ms`);
@@ -503,7 +542,7 @@ async function analyzeLinkedInCompany(tabId, token, userInputField, batchId) {
   return result;
 }
 
-async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId) {
+async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId, run = {}) {
   // Short first look. If this tab is the company HOME view the Website field
   // will NEVER appear on it however long we wait, so spending the full poll
   // budget here would only delay the /about/ fallback that does have the data.
@@ -556,6 +595,7 @@ async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId)
     pageContent,
     userInputField:        userInputField               || liData.linkedinUrl,
     batchId,
+    ...run,
   });
 }
 
@@ -595,7 +635,7 @@ async function scrapeWebsiteInBackground(url) {
   }
 }
 
-async function analyzeLinkedInUrl(linkedinUrl, token, userInputField, batchId) {
+async function analyzeLinkedInUrl(linkedinUrl, token, userInputField, batchId, run = {}) {
   let tabId = null;
   try {
     // Load /about/ directly. The base URL renders the company HOME view, which
@@ -613,7 +653,7 @@ async function analyzeLinkedInUrl(linkedinUrl, token, userInputField, batchId) {
     await waitForTabOrDeadline(tabId, LINKEDIN_LOAD_TIMEOUT, LINKEDIN_SOFT_DEADLINE);
     await sleep(TAB_SETTLE_DELAY);
 
-    return await analyzeLinkedInCompany(tabId, token, userInputField || linkedinUrl, batchId);
+    return await analyzeLinkedInCompany(tabId, token, userInputField || linkedinUrl, batchId, run);
   } catch (err) {
     return { success: false, error: err.message || 'Failed to load LinkedIn page.' };
   } finally {
@@ -648,11 +688,19 @@ async function callZilvoAnalyze({
   token, linkedinUrl, websiteUrl,
   companyName, linkedinIndustry, linkedinEmployeeCount, linkedinFollowerCount,
   pageContent, userInputField, batchId,
+  // Run-level context: where this job came from and which project's ICP scores it.
+  source, sourceExtractionId, projectId,
 }) {
   // The popup mirrors the selected ICP into storage. Read it here, at send
   // time, so every analyze path (LinkedIn, website, bulk) picks it up without
   // each call site having to thread it through.
-  const { zilvoIcpId: icpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
+  //
+  // EXCEPT when the run is pinned to a Project (the Extracted Lists flow):
+  // the promise there is "your Project contains the ICP Zilvo will use", so
+  // the header's global ICP picker must not override it. The backend resolves
+  // the ICP from projectId when icpId is absent.
+  const { zilvoIcpId: storedIcpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
+  const icpId = projectId ? '' : storedIcpId;
 
   let res;
   try {
@@ -672,6 +720,11 @@ async function callZilvoAnalyze({
         pageContent,
         userInputField,
         batchId,
+        // Set when the run came from a LinkedIn extraction, so the job carries
+        // its source label and is scored against the project the user picked.
+        source,
+        sourceExtractionId,
+        projectId,
         // Which positioning to score fit against, chosen in the popup. Omitted
         // when unset so the backend falls back to the account default ICP.
         icpId: icpId || undefined,
