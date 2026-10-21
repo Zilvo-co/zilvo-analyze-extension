@@ -149,24 +149,15 @@ export default function App() {
     return <Settings onBack={() => setShowSettings(false)} />;
   }
 
-  // ── Not logged in: full-screen sign-in gate ──
+  // ── Not logged in: full-panel sign-in gate ──
+  // No app header here on purpose: the sign-in card carries its own brand bar,
+  // and a second "Zilvo Analyze" bar above it reads as a duplicate.
   if (!zilvoToken) {
     return (
-      <div className="app">
-        <header className="app-header">
-          <div className="app-title">
-            <span className="app-logo">Z</span>
-            <span>Zilvo Analyze</span>
-          </div>
-          <button className="icon-btn" onClick={() => setShowSettings(true)} title="Settings">⚙</button>
-        </header>
-        <main className="app-main">
-          <AuthLogin onLoggedIn={(token, name, email) => {
-            setZilvoToken(token);
-            setZilvoName(name || email);
-          }} />
-        </main>
-      </div>
+      <AuthLogin onLoggedIn={(token, name, email) => {
+        setZilvoToken(token);
+        setZilvoName(name || email);
+      }} />
     );
   }
 

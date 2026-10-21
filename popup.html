@@ -8,60 +8,33 @@
 </head>
 <body>
   <div class="app">
+    <div class="app-accent" aria-hidden="true"></div>
 
     <!-- ── Header ──────────────────────────────────────────────────────────── -->
     <header class="header">
       <div class="logo">
-        <svg class="logo-icon" viewBox="0 0 36 36" fill="none">
-          <rect width="36" height="36" rx="8" fill="#6c63ff"/>
-          <path d="M9 11h18M9 18h12M9 25h8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="27" cy="25" r="5" fill="#f59e0b"/>
-          <path d="M24.5 25l1.5 1.5 3-3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <img class="logo-mark" src="icons/zilvo-logo.png" alt="">
         <div class="logo-text">
           <h1>Zilvo Analyze</h1>
-          <p>Company Intelligence</p>
+          <p>Company intelligence</p>
         </div>
       </div>
+
       <div id="user-badge" class="user-badge hidden">
-        <span id="user-credits" class="credits-badge">— cr</span>
-        <button id="refresh-btn" class="icon-btn" title="Refresh detection">
-          <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+        <span class="connected-pill">
+          <span class="connected-dot" aria-hidden="true"></span>
+          Connected
+          <span class="connected-sep" aria-hidden="true"></span>
+          <span id="user-credits" class="credits-badge">— cr</span>
+        </span>
+        <button id="refresh-btn" class="icon-btn" title="Refresh detection" aria-label="Refresh detection">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14" aria-hidden="true">
             <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
             <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
           </svg>
         </button>
       </div>
     </header>
-
-    <!-- ── Tab bar ──────────────────────────────────────────────────────────── -->
-    <nav class="tab-bar">
-      <button class="tab-btn active" data-tab="lists">
-        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
-          <path d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zM.5 12.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm0-4a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm0-4a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z"/>
-        </svg>
-        Extracted Lists
-      </button>
-      <button class="tab-btn" data-tab="linkedin">
-        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
-          <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248S2.4 3.226 2.4 3.934c0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016l.016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"/>
-        </svg>
-        LinkedIn
-      </button>
-      <button class="tab-btn" data-tab="website">
-        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
-          <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
-        </svg>
-        Website
-      </button>
-      <button class="tab-btn" data-tab="manual">
-        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
-          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-          <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-        </svg>
-        Manual / Upload
-      </button>
-    </nav>
 
     <!-- ── ICP selector — which positioning analyses are scored against ─────── -->
     <!-- Hidden until the ICP list loads. Two states once it does: the picker
@@ -82,37 +55,185 @@
       <p id="icp-error" class="hint icp-error hidden" role="alert"></p>
     </div>
 
-    <!-- ── Auth overlay (shown when not logged in, tabs 1 & 2) ──────────────── -->
+    <!-- ── Auth overlay — the full-panel sign-in gate. While it is visible the
+         app header and tab bar are hidden (body.auth-locked), so this reads as
+         a standalone sign-in page rather than a card under a dead tab bar. ── -->
     <div id="auth-overlay" class="main hidden">
-      <div class="card">
-        <div class="auth-header">
-          <svg viewBox="0 0 36 36" fill="none" width="32" height="32">
-            <rect width="36" height="36" rx="8" fill="#6c63ff"/>
-            <path d="M9 11h18M9 18h12M9 25h8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
-          <div>
-            <p class="auth-title">Sign in to Zilvo</p>
-            <p class="hint">Analyze companies with AI</p>
-          </div>
+      <div class="auth-shell">
+        <div class="auth-accent" aria-hidden="true"></div>
+
+        <div class="auth-card">
+          <header class="auth-brand">
+            <img class="auth-brand-logo" src="icons/zilvo-logo.png" alt="">
+            <div class="auth-brand-text">
+              <span class="auth-brand-name">Zilvo Analyze</span>
+              <span class="auth-brand-sub">Company intelligence extension</span>
+            </div>
+          </header>
+
+          <main class="auth-hero">
+            <span class="auth-hero-icon">
+              <img src="icons/zilvo-logo.png" alt="">
+            </span>
+
+            <h1 class="auth-hero-title">Sign in to Zilvo</h1>
+            <p class="auth-hero-sub">Connect the extension to your company workspace.</p>
+
+            <button id="login-btn" class="auth-cta" type="button">
+              <span class="auth-cta-label">Sign in</span>
+              <svg class="auth-cta-arrow" viewBox="0 0 24 24" width="17" height="17" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12h13"/>
+                <path d="M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+
+            <p id="auth-waiting" class="auth-note hidden" role="status">
+              Finish signing in on the Zilvo tab that just opened.
+            </p>
+          </main>
+
+          <footer class="auth-footer">
+            Zilvo Analyze<span class="auth-footer-sep">·</span>Chrome extension
+          </footer>
         </div>
-        <p class="hint" style="margin-top:12px;line-height:1.6">
-          Click below to open Zilvo. After you sign in, this panel will update automatically.
-        </p>
-        <button id="login-btn" class="btn btn-amber" style="margin-top:14px">
-          Open Zilvo &amp; Sign In →
-        </button>
-        <p class="hint" style="text-align:center; margin-top:10px">
-          No account? <a data-zilvo-link="signup" target="_blank" rel="noopener" class="info-link">Sign up free →</a>
-        </p>
       </div>
     </div>
 
-    <!-- ══════════════════ TAB 0 — EXTRACTED LISTS ═════════════════════════════ -->
+    <!-- ══════════════════ HOME — what do you want to do? ════════════════════ -->
+    <!-- The landing view after sign-in. Each card is a way into one flow; the
+         old tab bar is gone, so every feature screen returns here via Back. -->
+    <div id="view-home" class="view home" data-view="home">
+      <div class="main home-main">
+        <p class="home-eyebrow">What would you like to do?</p>
+
+        <div class="home-actions">
+          <button type="button" class="home-card home-card--mint" data-view-target="linkedin">
+            <span class="home-card-icon home-card-icon--mint">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3zM9 9h3.8v1.7h.05c.53-.95 1.83-1.95 3.77-1.95 4.03 0 4.78 2.5 4.78 5.75V21h-4v-5.6c0-1.34-.02-3.06-1.9-3.06-1.9 0-2.2 1.45-2.2 2.96V21H9z"/>
+              </svg>
+            </span>
+            <span class="home-card-body">
+              <span class="home-card-title">Analyze company&rsquo;s LinkedIn profile</span>
+              <span class="home-card-sub">Extract and qualify companies from supported LinkedIn pages.</span>
+            </span>
+            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5"/>
+            </svg>
+          </button>
+
+          <button type="button" class="home-card home-card--violet" data-view-target="linkedin-bulk">
+            <span class="home-card-icon home-card-icon--violet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/>
+                <path d="M13.8 3.6v3.6h3.5"/>
+                <path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/>
+              </svg>
+            </span>
+            <span class="home-card-body">
+              <span class="home-card-title">Analyze LinkedIn companies in bulk</span>
+              <span class="home-card-sub">Upload a CSV of LinkedIn company URLs for bulk scoring.</span>
+            </span>
+            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5"/>
+            </svg>
+          </button>
+
+          <button type="button" class="home-card home-card--blue" data-view-target="website">
+            <span class="home-card-icon home-card-icon--blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M3 12h18"/>
+                <path d="M12 3c2.6 2.6 3.9 5.7 3.9 9s-1.3 6.4-3.9 9c-2.6-2.6-3.9-5.7-3.9-9S9.4 5.6 12 3z"/>
+              </svg>
+            </span>
+            <span class="home-card-body">
+              <span class="home-card-title">Analyze one single website</span>
+              <span class="home-card-sub">Evaluate the current company website or enter a URL.</span>
+            </span>
+            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5"/>
+            </svg>
+          </button>
+
+          <button type="button" class="home-card home-card--violet" data-view-target="bulk">
+            <span class="home-card-icon home-card-icon--violet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/>
+                <path d="M13.8 3.6v3.6h3.5"/>
+                <path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/>
+              </svg>
+            </span>
+            <span class="home-card-body">
+              <span class="home-card-title">Analyze websites in bulk</span>
+              <span class="home-card-sub">Use extracted lists or upload a CSV for bulk scoring.</span>
+            </span>
+            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5"/>
+            </svg>
+          </button>
+
+          <button type="button" class="home-card home-card--teal" data-view-target="lists">
+            <span class="home-card-icon home-card-icon--teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3.5 21 8l-9 4.5L3 8z"/>
+                <path d="M3 12.5 12 17l9-4.5"/>
+                <path d="M3 16.8 12 21.3l9-4.5"/>
+              </svg>
+            </span>
+            <span class="home-card-body">
+              <span class="home-card-title">Analyze an extracted list</span>
+              <span class="home-card-sub">Score every company in an account extraction &mdash; no CSV export needed.</span>
+            </span>
+            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5"/>
+            </svg>
+          </button>
+
+          <a class="home-card home-card--mint home-card--results" data-zilvo-link="dashboard"
+             target="_blank" rel="noopener">
+            <span class="home-card-icon home-card-icon--mint">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="3.5" y="12.5" width="4.2" height="8" rx="1.6"/>
+                <rect x="10" y="7" width="4.2" height="13.5" rx="1.6"/>
+                <rect x="16.5" y="10" width="4.2" height="10.5" rx="1.6"/>
+              </svg>
+            </span>
+            <span class="home-card-body">
+              <span class="home-card-title">View all analysis results</span>
+              <span class="home-card-sub">Open Zilvo dashboard
+                <svg class="home-card-ext" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 3h7v7"/><path d="M13 3 5.5 10.5"/>
+                </svg>
+              </span>
+            </span>
+          </a>
+        </div>
+
+        <div class="home-rule" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ EXTRACTED LISTS ═══════════════════════════════════ -->
     <!-- ICP analysis of a whole LinkedIn extraction. The extension is the only
          thing that can resolve a LinkedIn company URL to the website the
          analyzer needs, so the run is started here, never from the web app. -->
-    <div id="tab-lists" class="tab-content">
-      <div class="main">
+    <div id="tab-lists" class="view tab-content" data-view="lists">
+      <div class="main page-main">
+        <div class="page-head">
+          <h1 class="page-title">Analyze an extracted list</h1>
+          <p class="page-sub">Score every company in an account extraction against your ICP.</p>
+        </div>
 
         <!-- Step 1 — pick a list (account extractions only — an account list
              is a complete set of companies, so every row can be scored) -->
@@ -168,238 +289,327 @@
           <button id="lists-progress-back-btn" class="btn btn-secondary" type="button">Back to lists</button>
         </div>
 
+        <div class="page-actions">
+          <button class="btn btn-back" type="button" data-view-target="home">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
+            Back
+          </button>
+        </div>
+
+        <footer class="page-footer">
+          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
+        </footer>
+
       </div>
     </div>
 
-    <!-- ══════════════════ TAB 1 — LINKEDIN COMPANY ═══════════════════════════ -->
-    <div id="tab-linkedin" class="tab-content hidden">
-      <div class="main">
+    <!-- ══════════════════ LINKEDIN COMPANIES ════════════════════════════════ -->
+    <div id="tab-linkedin" class="view tab-content hidden" data-view="linkedin">
+      <div class="main page-main">
 
-        <!-- Detection card -->
-        <div class="card" id="li-detection-card">
-          <div id="li-detect-loading" class="detect-row">
-            <span class="spinner" style="display:inline-block;border-top-color:var(--color-muted)" aria-hidden="true"></span>
-            <span>Detecting page…</span>
-          </div>
-
-          <!-- LinkedIn page found -->
-          <div id="li-detect-found" class="hidden">
-            <div class="detect-badge detect-badge-li">
-              <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11">
-                <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248S2.4 3.226 2.4 3.934c0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016l.016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"/>
-              </svg>
-              LinkedIn Company Page Detected
-            </div>
-            <p id="li-detect-url" class="detect-url" style="margin-top:5px"></p>
-
-            <!-- Auto-scrape status row -->
-            <div id="li-auto-status" class="auto-status-row hidden">
-              <span id="li-auto-dot" class="auto-dot"></span>
-              <span id="li-auto-label"></span>
-            </div>
-          </div>
-
-          <!-- Not on a LinkedIn page -->
-          <div id="li-detect-none" class="hidden">
-            <div class="detect-badge detect-badge-none">Not on a LinkedIn company page</div>
-            <p class="detect-sub" style="margin-top:6px">Navigate to a LinkedIn company page, or enter a URL below.</p>
-          </div>
-
-          <button id="li-analyze-btn" class="btn btn-amber hidden">
-            <span id="li-analyze-text">Analyze Company</span>
-            <span id="li-analyze-spinner" class="spinner" aria-hidden="true"></span>
-          </button>
+        <div class="page-head">
+          <h1 class="page-title">Analyze company&rsquo;s LinkedIn profile</h1>
+          <p class="page-sub">Resolve a company&rsquo;s website and qualify it in one step.</p>
         </div>
 
-        <!-- Manual LinkedIn URL -->
-        <div class="card">
-          <button class="collapsible-btn" id="li-manual-toggle" aria-expanded="false">
-            <span class="collapsible-title">
-              <svg viewBox="0 0 16 16" fill="currentColor" class="section-icon"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
-              Analyze a different LinkedIn URL
-            </span>
-            <svg id="li-manual-chevron" class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4"/></svg>
-          </button>
-          <div id="li-manual-body" class="collapsible-body hidden">
-            <label class="field-label" for="li-manual-url">LinkedIn Company URL</label>
-            <div class="input-row">
-              <input type="url" id="li-manual-url" class="input" placeholder="https://linkedin.com/company/hubspot/" autocomplete="off" spellcheck="false"/>
-              <button id="li-manual-clear" class="icon-btn" title="Clear">
-                <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"/></svg>
-              </button>
-            </div>
-            <p id="li-manual-error" class="field-error" aria-live="polite"></p>
-            <button id="li-manual-btn" class="btn btn-secondary">Analyze URL</button>
+        <!-- One company -->
+        <section class="panel panel--blue">
+          <div class="panel-head">
+            <span class="panel-icon panel-icon--blue"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3zM9 9h3.8v1.7h.05c.53-.95 1.83-1.95 3.77-1.95 4.03 0 4.78 2.5 4.78 5.75V21h-4v-5.6c0-1.34-.02-3.06-1.9-3.06-1.9 0-2.2 1.45-2.2 2.96V21H9z"/></svg></span>
+            <h2 class="panel-title">Analyze one LinkedIn company</h2>
           </div>
-        </div>
+          <p class="panel-sub">Paste a company page URL to resolve its website.</p>
 
-        <!-- Result card -->
-        <div id="li-result-card" class="card hidden">
+          <input type="url" id="li-manual-url" class="input input--lg" placeholder="linkedin.com/company/example"
+                 autocomplete="off" spellcheck="false"/>
+          <p id="li-manual-error" class="field-error" aria-live="polite"></p>
+
+          <button id="li-manual-btn" class="btn btn-amber" type="button">
+            Analyze LinkedIn URL
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+          </button>
+        </section>
+
+        <!-- Result of the last single-company analysis -->
+        <div id="li-result-card" class="card result-card hidden">
           <p id="li-result-msg" class="result-msg"></p>
-          <button id="li-retry-btn" class="btn btn-secondary hidden">
+          <button id="li-retry-btn" class="btn btn-secondary hidden" type="button">
             <span id="li-retry-text">Try again</span>
             <span id="li-retry-spinner" class="spinner" aria-hidden="true"></span>
           </button>
           <a data-zilvo-link="overview" target="_blank" rel="noopener"
-             class="btn btn-secondary" style="text-decoration:none;margin-top:8px;display:flex">
+             class="btn btn-secondary" style="text-decoration:none">
             Open Zilvo Dashboard →
           </a>
         </div>
 
-      </div>
-    </div>
-
-    <!-- ══════════════════ TAB 2 — WEBSITE ════════════════════════════════════ -->
-    <div id="tab-website" class="tab-content hidden">
-      <div class="main">
-
-        <!-- Detection card -->
-        <div class="card">
-          <div id="web-detect-loading" class="detect-row">
-            <span class="spinner" style="display:inline-block;border-top-color:var(--color-muted)" aria-hidden="true"></span>
-            <span>Detecting page…</span>
+        <!-- Detection state the helper code still reads. The new design has no
+             detection banner: the detected URL is prefilled into the input
+             above, which is the only part of detection the user needs. -->
+        <div class="hidden" aria-hidden="true">
+          <div id="li-detect-loading"></div>
+          <div id="li-detect-found">
+            <p id="li-detect-url"></p>
+            <div id="li-auto-status"><span id="li-auto-dot"></span><span id="li-auto-label"></span></div>
           </div>
-
-          <!-- Website found -->
-          <div id="web-detect-found" class="hidden">
-            <div class="detect-badge detect-badge-web">
-              <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11">
-                <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
-              </svg>
-              Website Detected
-            </div>
-            <p id="web-detect-url" class="detect-url" style="margin-top:5px"></p>
-          </div>
-
-          <!-- On LinkedIn, not a website -->
-          <div id="web-detect-is-linkedin" class="hidden">
-            <div class="detect-badge detect-badge-none">You're on LinkedIn</div>
-            <p class="detect-sub" style="margin-top:6px">Switch to the <strong style="color:var(--color-text)">LinkedIn</strong> tab to analyze this company, or enter a website URL below.</p>
-          </div>
-
-          <!-- Unknown / restricted page -->
-          <div id="web-detect-none" class="hidden">
-            <div class="detect-badge detect-badge-none">No website detected</div>
-            <p class="detect-sub" style="margin-top:6px">Navigate to a company website, or enter a URL below.</p>
-          </div>
-
-          <button id="web-analyze-btn" class="btn btn-amber hidden">
-            <span id="web-analyze-text">Analyze Website</span>
-            <span id="web-analyze-spinner" class="spinner" aria-hidden="true"></span>
+          <div id="li-detect-none"></div>
+          <button id="li-analyze-btn" type="button">
+            <span id="li-analyze-text">Analyze Company</span>
+            <span id="li-analyze-spinner" class="spinner"></span>
           </button>
         </div>
 
-        <!-- Manual Website URL -->
-        <div class="card">
-          <button class="collapsible-btn" id="web-manual-toggle" aria-expanded="false">
-            <span class="collapsible-title">
-              <svg viewBox="0 0 16 16" fill="currentColor" class="section-icon"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
-              Analyze a different website
-            </span>
-            <svg id="web-manual-chevron" class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4"/></svg>
+        <div class="page-actions">
+          <button class="btn btn-back" type="button" data-view-target="home">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
+            Back
           </button>
-          <div id="web-manual-body" class="collapsible-body hidden">
-            <label class="field-label" for="web-manual-url">Website URL</label>
-            <div class="input-row">
-              <input type="url" id="web-manual-url" class="input" placeholder="https://example.com" autocomplete="off" spellcheck="false"/>
-              <button id="web-manual-clear" class="icon-btn" title="Clear">
-                <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"/></svg>
-              </button>
-            </div>
-            <p id="web-manual-error" class="field-error" aria-live="polite"></p>
-            <button id="web-manual-btn" class="btn btn-secondary">Analyze URL</button>
-          </div>
         </div>
 
-        <!-- Result card -->
-        <div id="web-result-card" class="card hidden">
-          <p id="web-result-msg" class="result-msg"></p>
-          <button id="web-retry-btn" class="btn btn-secondary hidden">
-            <span id="web-retry-text">Try again</span>
-            <span id="web-retry-spinner" class="spinner" aria-hidden="true"></span>
-          </button>
-          <a data-zilvo-link="overview" target="_blank" rel="noopener"
-             class="btn btn-secondary" style="text-decoration:none;margin-top:8px;display:flex">
-            Open Zilvo Dashboard →
-          </a>
-        </div>
+        <footer class="page-footer">
+          <p>Your input is saved automatically</p>
+          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
+        </footer>
 
       </div>
     </div>
 
-    <!-- ══════════════════ TAB 3 — MANUAL / BULK CSV ═══════════════════════════ -->
-    <div id="tab-manual" class="tab-content hidden">
-      <div class="main">
+    <!-- ══════════════════ LINKEDIN IN BULK ═══════════════════════════════════ -->
+    <div id="tab-linkedin-bulk" class="view tab-content hidden" data-view="linkedin-bulk">
+      <div class="main page-main">
 
-        <!-- LinkedIn CSV upload -->
-        <div class="card">
-          <div class="section-header">
-            <span class="field-label" style="margin-bottom:0">LinkedIn URLs</span>
-            <button id="li-csv-clear-btn" class="pill-btn pill-danger hidden">Clear</button>
+        <div class="page-head">
+          <h1 class="page-title">Analyze LinkedIn companies in bulk</h1>
+          <p class="page-sub">Upload a CSV containing LinkedIn company URLs.</p>
+        </div>
+
+        <!-- A list of companies -->
+        <section class="panel panel--violet">
+          <div class="panel-head">
+            <span class="panel-icon panel-icon--violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/><path d="M13.8 3.6v3.6h3.5"/><path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/></svg></span>
+            <h2 class="panel-title">LinkedIn company URLs</h2>
           </div>
-          <p class="hint" style="margin-top:3px;margin-bottom:8px">CSV with one LinkedIn company URL per row &mdash; <button id="li-csv-example-btn" class="link-btn">Download example</button></p>
-          <label for="li-csv-input" class="csv-dropzone" id="li-csv-zone">
-            <svg viewBox="0 0 16 16" fill="currentColor" width="18" height="18">
-              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-            </svg>
-            <span id="li-csv-zone-label">Click to upload CSV</span>
-            <input type="file" id="li-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
+          <p class="panel-sub">One LinkedIn company URL per row &mdash; up to 10,000 rows.</p>
+
+          <input type="file" id="li-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
+          <label for="li-csv-input" class="btn btn-amber btn--file">
+            Upload CSV
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
           </label>
+
+          <div class="panel-links panel-links--center">
+            <button id="li-csv-example-btn" class="sample-link" type="button">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M3 13h10"/></svg>
+              Download sample CSV
+            </button>
+            <button id="li-csv-clear-btn" class="pill-btn pill-danger hidden" type="button">Clear</button>
+          </div>
+
           <div id="li-csv-preview" class="hidden">
             <p id="li-csv-count" class="bulk-count"></p>
             <ul id="li-csv-list" class="bulk-url-list"></ul>
           </div>
           <p id="li-csv-error" class="field-error" aria-live="polite"></p>
+
+          <p class="panel-foot">Original LinkedIn URLs are preserved with each result.</p>
+
+          <button id="li-bulk-run-btn" class="btn btn-amber hidden" type="button">
+            Analyze <span id="li-bulk-run-count">0</span> LinkedIn companies
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+          </button>
+
+          <div id="li-bulk-progress-host"></div>
+        </section>
+
+        <div class="page-actions">
+          <button class="btn btn-back" type="button" data-view-target="home">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
+            Back
+          </button>
         </div>
 
-        <!-- Website CSV upload -->
-        <div class="card">
-          <div class="section-header">
-            <span class="field-label" style="margin-bottom:0">Website URLs</span>
-            <button id="web-csv-clear-btn" class="pill-btn pill-danger hidden">Clear</button>
+        <footer class="page-footer">
+          <p>Your input is saved automatically</p>
+          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ══════════════════ SINGLE WEBSITE ═════════════════════════════════════ -->
+    <div id="tab-website" class="view tab-content hidden" data-view="website">
+      <div class="main page-main">
+
+        <div class="page-head">
+          <h1 class="page-title">Analyze a single website</h1>
+          <p class="page-sub">Enter a company website URL and analyze its business and ICP fit.</p>
+        </div>
+
+        <section class="panel">
+          <h2 class="panel-title">Company website URL</h2>
+          <p class="panel-sub">Enter the official website to analyze.</p>
+
+          <div class="input-shell">
+            <svg class="input-shell-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h7v7"/><path d="M13 3 5.5 10.5"/></svg>
+            <input type="url" id="web-manual-url" class="input input--lg input--with-icon"
+                   placeholder="https://www.example.com" autocomplete="off" spellcheck="false"/>
           </div>
-          <p class="hint" style="margin-top:3px;margin-bottom:8px">CSV with one website URL per row &mdash; <button id="web-csv-example-btn" class="link-btn">Download example</button></p>
-          <label for="web-csv-input" class="csv-dropzone" id="web-csv-zone">
-            <svg viewBox="0 0 16 16" fill="currentColor" width="18" height="18">
-              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-            </svg>
-            <span id="web-csv-zone-label">Click to upload CSV</span>
+          <p id="web-manual-error" class="field-error" aria-live="polite"></p>
+
+          <p class="panel-hint">
+            <span class="info-dot" aria-hidden="true">i</span>
+            Use the company&rsquo;s main homepage for best results.
+          </p>
+        </section>
+
+        <section class="panel panel--info">
+          <p class="info-title">
+            <span class="info-dot" aria-hidden="true">i</span>
+            Ready to analyze
+          </p>
+          <p class="panel-sub">The URL stays linked to the company&rsquo;s results.</p>
+        </section>
+
+        <!-- Result of the last website analysis -->
+        <div id="web-result-card" class="card result-card hidden">
+          <p id="web-result-msg" class="result-msg"></p>
+          <button id="web-retry-btn" class="btn btn-secondary hidden" type="button">
+            <span id="web-retry-text">Try again</span>
+            <span id="web-retry-spinner" class="spinner" aria-hidden="true"></span>
+          </button>
+          <a data-zilvo-link="overview" target="_blank" rel="noopener"
+             class="btn btn-secondary" style="text-decoration:none">
+            Open Zilvo Dashboard →
+          </a>
+        </div>
+
+        <div class="hidden" aria-hidden="true">
+          <div id="web-detect-loading"></div>
+          <div id="web-detect-found"><p id="web-detect-url"></p></div>
+          <div id="web-detect-is-linkedin"></div>
+          <div id="web-detect-none"></div>
+          <button id="web-analyze-btn" type="button">
+            <span id="web-analyze-text">Analyze Website</span>
+            <span id="web-analyze-spinner" class="spinner"></span>
+          </button>
+        </div>
+
+        <div class="page-actions">
+          <button class="btn btn-back" type="button" data-view-target="home">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
+            Back
+          </button>
+          <button id="web-manual-btn" class="btn btn-amber btn--inline" type="button">
+            Continue
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+          </button>
+        </div>
+
+        <footer class="page-footer">
+          <p>Your input is saved automatically</p>
+          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
+        </footer>
+
+      </div>
+    </div>
+
+    <!-- ══════════════════ BULK WEBSITES ══════════════════════════════════════ -->
+    <div id="tab-bulk" class="view tab-content hidden" data-view="bulk">
+      <div class="main page-main">
+
+        <div class="page-head">
+          <h1 class="page-title">Analyze websites in bulk</h1>
+          <p class="page-sub">Upload a CSV to analyze multiple company websites.</p>
+        </div>
+
+        <section class="panel">
+          <label class="dropzone" for="web-csv-input" id="web-csv-zone">
+            <span class="dropzone-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5"/><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="M5 16.5v2.2A1.3 1.3 0 0 0 6.3 20h11.4a1.3 1.3 0 0 0 1.3-1.3v-2.2"/></svg></span>
+            <span class="dropzone-heading">Upload company URL CSV</span>
+            <span class="dropzone-sub" id="web-csv-zone-label">Drop your CSV here or browse files</span>
+            <span class="dropzone-btn">Choose file</span>
+            <span class="dropzone-note">CSV · Up to 10,000 rows</span>
             <input type="file" id="web-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
           </label>
+
           <div id="web-csv-preview" class="hidden">
             <p id="web-csv-count" class="bulk-count"></p>
             <ul id="web-csv-list" class="bulk-url-list"></ul>
           </div>
           <p id="web-csv-error" class="field-error" aria-live="polite"></p>
-        </div>
 
-        <button id="bulk-run-btn" class="btn btn-amber hidden">
-          <span id="bulk-run-text">Analyze All</span>
-          <span id="bulk-run-spinner" class="spinner" aria-hidden="true"></span>
-        </button>
-
-        <!-- Bulk progress / results -->
-        <div id="bulk-progress-card" class="card hidden">
-          <div class="section-label">Progress</div>
-          <div class="bulk-progress">
-            <div class="progress-track">
-              <div class="progress-fill" id="bulk-progress-fill"></div>
-            </div>
-            <p id="bulk-progress-label" class="hint" style="margin-top:4px"></p>
+          <div class="req-block">
+            <p class="req-title">CSV requirements</p>
+            <ul class="req-list">
+              <li>One company website URL per row</li>
+              <li>Columns: website, url, domain or company_website</li>
+            </ul>
           </div>
-          <ul id="bulk-results-list" class="bulk-results"></ul>
-          <button id="bulk-retry-btn" class="btn btn-secondary hidden">
-            <span id="bulk-retry-text">Retry failed</span>
-            <span id="bulk-retry-spinner" class="spinner" aria-hidden="true"></span>
+        </section>
+
+        <div class="panel-links panel-links--outside">
+          <button id="web-csv-example-btn" class="sample-link" type="button">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M3 13h10"/></svg>
+            Download sample CSV
           </button>
-          <a data-zilvo-link="overview" target="_blank" rel="noopener"
-             id="bulk-dashboard-link"
-             class="btn btn-secondary hidden" style="text-decoration:none;margin-top:8px;display:flex">
-            Open Zilvo Dashboard →
-          </a>
+          <button id="web-csv-clear-btn" class="pill-btn pill-danger hidden" type="button">Clear</button>
         </div>
+
+        <section class="panel panel--info">
+          <p class="info-title">
+            <span class="info-dot" aria-hidden="true">i</span>
+            Original file is preserved
+          </p>
+          <p class="panel-sub">You can return to this step before starting analysis.</p>
+        </section>
+
+        <div id="web-bulk-progress-host">
+          <!-- Bulk progress / results. JS moves this card into the LinkedIn view
+               when a LinkedIn list run starts, so both screens share one run. -->
+          <div id="bulk-progress-card" class="card hidden">
+            <div class="section-label">Progress</div>
+            <div class="bulk-progress">
+              <div class="progress-track">
+                <div class="progress-fill" id="bulk-progress-fill"></div>
+              </div>
+              <p id="bulk-progress-label" class="hint" style="margin-top:4px"></p>
+            </div>
+            <ul id="bulk-results-list" class="bulk-results"></ul>
+            <button id="bulk-retry-btn" class="btn btn-secondary hidden" type="button">
+              <span id="bulk-retry-text">Retry failed</span>
+              <span id="bulk-retry-spinner" class="spinner" aria-hidden="true"></span>
+            </button>
+            <a data-zilvo-link="overview" target="_blank" rel="noopener"
+               id="bulk-dashboard-link"
+               class="btn btn-secondary hidden" style="text-decoration:none">
+              Open Zilvo Dashboard →
+            </a>
+          </div>
+        </div>
+
+        <div class="page-actions">
+          <button class="btn btn-back" type="button" data-view-target="home">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
+            Back
+          </button>
+          <button id="bulk-run-btn" class="btn btn-amber btn--inline" type="button">
+            <span id="bulk-run-text">Continue</span>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+            <span id="bulk-run-spinner" class="spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <footer class="page-footer">
+          <p>Your input is saved automatically</p>
+          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
+        </footer>
 
       </div>
     </div>

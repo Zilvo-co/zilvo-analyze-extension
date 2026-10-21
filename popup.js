@@ -15,7 +15,7 @@ const $ = id => document.getElementById(id);
 
 // ─── Shared state ─────────────────────────────────────────────────────────────
 let _detection = null; // result from GET_TAB_DETECTION
-let _activeTab  = 'lists';
+let _activeTab  = 'home';
 
 // ─── Init (deferred to end of file so all const declarations are initialized) ─
 
@@ -23,21 +23,22 @@ let _activeTab  = 'lists';
 // TAB BAR
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function initTabBar() {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+function initNavigation() {
+  document.querySelectorAll('[data-view-target]').forEach(btn => {
+    btn.addEventListener('click', () => showView(btn.dataset.viewTarget));
   });
 }
 
-function switchTab(name) {
+/**
+ * Show one view: 'home', 'lists', 'linkedin', 'website' or 'manual'.
+ *
+ * Every screen carries .view + data-view, so adding a screen is markup only.
+ * Visibility is applied by syncAuthOverlay(), which also knows about the
+ * signed-out gate — two places toggling .hidden is how a logged-out user ends
+ * up staring at a half-rendered feature screen.
+ */
+function showView(name) {
   _activeTab = name;
-  document.querySelectorAll('.tab-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.tab === name)
-  );
-  document.querySelectorAll('.tab-content').forEach(el =>
-    el.classList.toggle('hidden', el.id !== `tab-${name}`)
-  );
-  // Auth overlay: visible on CI tabs only when not logged in
   syncAuthOverlay();
 }
 
@@ -66,6 +67,7 @@ function applyZilvoLinks() {
 
 const authOverlay  = $('auth-overlay');
 const loginBtn     = $('login-btn');
+const authWaiting  = $('auth-waiting');
 const userBadge    = $('user-badge');
 const userCredits  = $('user-credits');
 const refreshBtn   = $('refresh-btn');
@@ -73,6 +75,9 @@ const refreshBtn   = $('refresh-btn');
 async function initAuth() {
   loginBtn.addEventListener('click', () => {
     chrome.tabs.create({ url: ZILVO_LOGIN_URL });
+    // Sign-in happens on the web app; the panel is told about it over the
+    // ZILVO_AUTH_SYNCED message, so just acknowledge that we're waiting.
+    authWaiting?.classList.remove('hidden');
   });
 
   refreshBtn.addEventListener('click', async () => {
@@ -82,7 +87,6 @@ async function initAuth() {
 
   // Live updates from background
   chrome.runtime.onMessage.addListener(msg => {
-    if (msg.action === 'CI_AUTO_STATUS')    onAutoScrapeStatus(msg);
     if (msg.action === 'ZILVO_AUTH_SYNCED') onAuthSynced(msg);
   });
 
@@ -104,7 +108,10 @@ async function initAuth() {
     // applyPendingList force-loads the lists itself, so only load here when
     // there was no pending request — otherwise every open fetched twice.
     const jumped = await applyPendingList();
-    if (!jumped) await loadLists();
+    if (!jumped) {
+      showView('home');
+      await loadLists();
+    }
     await runDetection();
   }
   syncAuthOverlay();
@@ -117,14 +124,15 @@ function syncAuthOverlay() {
 
   authOverlay.classList.toggle('hidden', !showOverlay);
 
-  // When the auth overlay is visible, hide all tab content so the login
-  // screen fills the full extension. Restore the active tab when logged in.
-  document.querySelectorAll('.tab-content').forEach(el => {
-    if (showOverlay) {
-      el.classList.add('hidden');
-    } else {
-      el.classList.toggle('hidden', el.id !== `tab-${_activeTab}`);
-    }
+  // Locks the header and tab bar away (styles.css) so the sign-in card owns
+  // the whole panel instead of sitting under controls that cannot be used.
+  document.body.classList.toggle('auth-locked', showOverlay);
+  if (!showOverlay) authWaiting?.classList.add('hidden');
+
+  // When the auth overlay is visible, hide every view so the login screen
+  // fills the panel. Otherwise show only the active view.
+  document.querySelectorAll('.view').forEach(el => {
+    el.classList.toggle('hidden', showOverlay || el.dataset.view !== _activeTab);
   });
 }
 
@@ -149,9 +157,10 @@ async function onAuthSynced(msg) {
   } else {
     showUserBadge(msg.user);
     await initIcpSelector();
+    // A fresh sign-in lands on the home menu; a pending "Open in Zilvo
+    // Analyze" from the web app still wins and jumps straight to its list.
+    showView('home');
     syncAuthOverlay();
-    // A user who clicked "Open in Zilvo Analyze" while signed out lands here
-    // after logging in — honour that request instead of dropping it.
     const jumped = await applyPendingList();
     if (!jumped) await loadLists({ force: true });
     if (!_detection) await runDetection();
@@ -300,29 +309,20 @@ async function runDetection() {
   // Auto-switch to the relevant tab based on what was detected — but never
   // away from a list the user is part-way through setting up.
   if (_listsBusy || _selectedList) {
-    // leave the Lists tab alone
+    // leave the Lists view alone
+  } else if (_activeTab === 'home') {
+    // The home menu is where every session starts — never yank the user out
+    // of it the moment detection finishes. The cards still open the right
+    // screen, which already has this detection applied.
   } else if (result.type === 'LINKEDIN_COMPANY') {
-    switchTab('linkedin');
+    showView('linkedin');
   } else if (result.type === 'WEBSITE' || result.type === 'WEBSITE_WITH_LINKEDIN') {
-    switchTab('website');
+    showView('website');
   }
 
   applyLinkedInDetection(result);
   applyWebsiteDetection(result);
 
-  // Check if background already auto-scraped this tab
-  const session = await getSessionScrape();
-  if (session && session.tabId === result.tabId) {
-    if (session.status === 'IN_PROGRESS') {
-      setLiAnalyzeState(true);
-    } else if (session.status === 'DONE') {
-      showLiResult('success', 'Auto-analyzed! Results are in your Zilvo Dashboard.');
-      updateCreditsDisplay(session.creditsRemaining);
-    } else if (session.status === 'ERROR') {
-      _lastLiAttempt = autoLiAttempt(session.linkedinUrl || result.linkedinUrl);
-      showLiResult('error', session.error || 'Auto-analysis failed.');
-    }
-  }
 }
 
 function showDetectionLoading() {
@@ -356,6 +356,10 @@ function applyLinkedInDetection(d) {
     $('li-auto-status').classList.add('hidden');
     $('li-analyze-btn').classList.remove('hidden');
     $('li-analyze-text').textContent = 'Analyze Company';
+    // Detection is invisible in the new design: the page you are on simply
+    // arrives prefilled in the input. Never overwrite something typed by hand.
+    const input = $('li-manual-url');
+    if (input && !input.value.trim() && d.linkedinUrl) input.value = d.linkedinUrl;
   } else {
     $('li-detect-none').classList.remove('hidden');
     // Still allow manual input — no analyze button for auto
@@ -376,18 +380,18 @@ function wireLinkedInTab() {
     if (_lastLiAttempt) runLiAnalyze(_lastLiAttempt, 'retry');
   });
 
-  $('li-manual-toggle').addEventListener('click', () =>
-    toggleSection($('li-manual-body'), $('li-manual-chevron'), $('li-manual-toggle'))
-  );
-  $('li-manual-clear').addEventListener('click', () => {
-    $('li-manual-url').value = '';
-    $('li-manual-error').textContent = '';
-  });
   $('li-manual-btn').addEventListener('click', () =>
     handleLiAnalyze($('li-manual-url').value.trim())
   );
   $('li-manual-url').addEventListener('keydown', e => {
     if (e.key === 'Enter') handleLiAnalyze($('li-manual-url').value.trim());
+  });
+  // "Your input is saved automatically" is a promise, so keep it.
+  $('li-manual-url').addEventListener('input', () => {
+    chrome.storage.local.set({ liManualUrl: $('li-manual-url').value });
+  });
+  chrome.storage.local.get({ liManualUrl: '' }, items => {
+    if (!$('li-manual-url').value) $('li-manual-url').value = items.liManualUrl || '';
   });
 }
 
@@ -396,14 +400,6 @@ function wireLinkedInTab() {
 // hand and so has nothing else to click. Token excluded on purpose — it is
 // re-read at send time so a retry after re-login uses the current session.
 let _lastLiAttempt = null;
-
-/** The attempt that would re-run an auto-analysis of `linkedinUrl`. */
-function autoLiAttempt(linkedinUrl) {
-  if (!linkedinUrl) return null;
-  // Deliberately the URL form, not the tab form: it opens a fresh /about/ tab
-  // rather than depending on the user still sitting on the page that failed.
-  return { action: 'ANALYZE_COMPANY_URL', linkedinUrl, userInputField: linkedinUrl };
-}
 
 async function handleLiAnalyze(overrideUrl) {
   $('li-manual-error').textContent = '';
@@ -521,6 +517,9 @@ function applyWebsiteDetection(d) {
     $('web-detect-url').textContent = truncateUrl(d.websiteUrl || d.currentUrl || '');
     $('web-analyze-btn').classList.remove('hidden');
     $('web-analyze-text').textContent = 'Analyze Website';
+    const input = $('web-manual-url');
+    const detected = d.websiteUrl || d.currentUrl || '';
+    if (input && !input.value.trim() && detected) input.value = detected;
   } else if (d.type === 'LINKEDIN_COMPANY') {
     $('web-detect-is-linkedin').classList.remove('hidden');
   } else {
@@ -541,18 +540,17 @@ function wireWebsiteTab() {
     if (_lastWebAttempt) runWebAnalyze(_lastWebAttempt, 'retry');
   });
 
-  $('web-manual-toggle').addEventListener('click', () =>
-    toggleSection($('web-manual-body'), $('web-manual-chevron'), $('web-manual-toggle'))
-  );
-  $('web-manual-clear').addEventListener('click', () => {
-    $('web-manual-url').value = '';
-    $('web-manual-error').textContent = '';
-  });
   $('web-manual-btn').addEventListener('click', () =>
     handleWebAnalyze($('web-manual-url').value.trim())
   );
   $('web-manual-url').addEventListener('keydown', e => {
     if (e.key === 'Enter') handleWebAnalyze($('web-manual-url').value.trim());
+  });
+  $('web-manual-url').addEventListener('input', () => {
+    chrome.storage.local.set({ webManualUrl: $('web-manual-url').value });
+  });
+  chrome.storage.local.get({ webManualUrl: '' }, items => {
+    if (!$('web-manual-url').value) $('web-manual-url').value = items.webManualUrl || '';
   });
 }
 
@@ -643,41 +641,7 @@ function hideWebResult() {
   $('web-retry-btn').classList.add('hidden');
 }
 
-// ── Auto-scrape status listener (from background.js) ─────────────────────────
-
-function onAutoScrapeStatus(msg) {
-  if (msg.status === 'IN_PROGRESS') {
-    setLiAnalyzeState(true);
-    hideLiResult();
-    $('li-auto-status').classList.remove('hidden');
-    $('li-auto-dot').className = 'auto-dot auto-dot-active';
-    $('li-auto-label').textContent = 'Auto-analyzing…';
-  } else if (msg.status === 'DONE') {
-    setLiAnalyzeState(false);
-    $('li-auto-status').classList.remove('hidden');
-    $('li-auto-dot').className = 'auto-dot auto-dot-done';
-    $('li-auto-label').textContent = 'Auto-analyzed';
-    $('li-analyze-text').textContent = 'Re-analyze';
-    showLiResult('success', 'Auto-analyzed! Results are ready in your Zilvo Dashboard.');
-    updateCreditsDisplay(msg.creditsRemaining);
-  } else if (msg.status === 'ERROR') {
-    setLiAnalyzeState(false);
-    $('li-auto-status').classList.add('hidden');
-    // An auto-analysis is not something the user started, so without this the
-    // error card has nothing to act on.
-    _lastLiAttempt = autoLiAttempt(msg.linkedinUrl || _detection?.linkedinUrl);
-    showLiResult('error', msg.error || 'Auto-analysis failed.');
-  }
-}
-
 // ─── Shared helpers ───────────────────────────────────────────────────────────
-
-async function getSessionScrape() {
-  try {
-    const r = await chrome.storage.session.get('lastCIScrape');
-    return r.lastCIScrape ?? null;
-  } catch { return null; }
-}
 
 function updateCreditsDisplay(credits) {
   if (credits == null) return;
@@ -691,13 +655,6 @@ function truncateUrl(url) {
     const path = u.pathname !== '/' ? u.pathname.slice(0, 28) : '';
     return u.hostname + path;
   } catch { return url.slice(0, 50); }
-}
-
-function toggleSection(bodyEl, chevronEl, triggerEl) {
-  const isOpen = !bodyEl.classList.contains('hidden');
-  bodyEl.classList.toggle('hidden', isOpen);
-  chevronEl.classList.toggle('open', !isOpen);
-  triggerEl.setAttribute('aria-expanded', String(!isOpen));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -752,7 +709,7 @@ async function applyPendingList() {
   await chrome.storage.local.remove(PENDING_LIST_KEY);
   if (Date.now() - (stored.at ?? 0) > PENDING_LIST_TTL_MS) return false;
 
-  switchTab('lists');
+  showView('lists');
   await loadLists({ force: true });
 
   const match = _lists.find((l) => l.id === stored.extractionId);
@@ -1076,16 +1033,27 @@ let _bulkRunning      = false;
 let _bulkFailed  = [];
 let _bulkBatchId = null;
 let _bulkTotal   = 0;
+let _bulkScope   = 'website';
 
-function initManualTab() {
+function initBulkTab() {
   $('li-csv-input').addEventListener('change',  e => handleCsvUpload(e, 'linkedin'));
   $('web-csv-input').addEventListener('change', e => handleCsvUpload(e, 'website'));
   $('li-csv-clear-btn').addEventListener('click',  () => clearBulkCsv('linkedin'));
   $('web-csv-clear-btn').addEventListener('click', () => clearBulkCsv('website'));
   $('li-csv-example-btn').addEventListener('click', () => downloadExampleCsv('linkedin'));
   $('web-csv-example-btn').addEventListener('click', () => downloadExampleCsv('website'));
-  $('bulk-run-btn').addEventListener('click', handleBulkAnalyze);
+  // Each screen runs its OWN list: a CSV uploaded on the LinkedIn screen must
+  // not be sent by the bulk-website Continue button.
+  $('li-bulk-run-btn').addEventListener('click', () => handleBulkAnalyze('linkedin'));
+  $('bulk-run-btn').addEventListener('click',    () => handleBulkAnalyze('website'));
   $('bulk-retry-btn').addEventListener('click', handleBulkRetry);
+}
+
+/** The shared progress card follows whichever screen started the run. */
+function mountBulkProgress(scope) {
+  const host = scope === 'linkedin' ? $('li-bulk-progress-host') : $('web-bulk-progress-host');
+  const card = $('bulk-progress-card');
+  if (host && card && card.parentElement !== host) host.appendChild(card);
 }
 
 function downloadExampleCsv(type) {
@@ -1229,12 +1197,15 @@ function renderBulkPreview(prefix, urls, label) {
   $(`${prefix}-csv-preview`).classList.toggle('hidden', !hasUrls);
   $(`${prefix}-csv-clear-btn`).classList.toggle('hidden', !hasUrls);
 
+  const zoneLabel = $(`${prefix}-csv-zone-label`);
   if (!hasUrls) {
-    $(`${prefix}-csv-zone-label`).textContent = 'Click to upload CSV';
+    if (zoneLabel) zoneLabel.textContent = 'Drop your CSV here or browse files';
     return;
   }
 
-  $(`${prefix}-csv-zone-label`).textContent = `${urls.length} ${label} URL${urls.length !== 1 ? 's' : ''} loaded`;
+  if (zoneLabel) {
+    zoneLabel.textContent = `${urls.length} ${label} URL${urls.length !== 1 ? 's' : ''} loaded`;
+  }
   $(`${prefix}-csv-count`).textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''} found`;
 
   const listEl = $(`${prefix}-csv-list`);
@@ -1264,7 +1235,8 @@ function clearBulkCsv(type) {
 
   $(`${prefix}-csv-preview`).classList.add('hidden');
   $(`${prefix}-csv-clear-btn`).classList.add('hidden');
-  $(`${prefix}-csv-zone-label`).textContent = 'Click to upload CSV';
+  const zoneLabel = $(`${prefix}-csv-zone-label`);
+  if (zoneLabel) zoneLabel.textContent = 'Drop your CSV here or browse files';
   $(`${prefix}-csv-error`).textContent = '';
   updateBulkRunBtn();
 }
@@ -1275,10 +1247,20 @@ function updateBulkRunBtn() {
   _bulkFailed = [];
   $('bulk-retry-btn').classList.add('hidden');
 
-  const hasData = _bulkLinkedInUrls.length > 0 || _bulkWebsiteUrls.length > 0;
-  const total   = _bulkLinkedInUrls.length + _bulkWebsiteUrls.length;
-  $('bulk-run-btn').classList.toggle('hidden', !hasData);
-  $('bulk-run-text').textContent = hasData ? `Analyze All (${total})` : 'Analyze All';
+  const liCount  = _bulkLinkedInUrls.length;
+  const webCount = _bulkWebsiteUrls.length;
+
+  const liBtn = $('li-bulk-run-btn');
+  if (liBtn) {
+    liBtn.classList.toggle('hidden', liCount === 0);
+    $('li-bulk-run-count').textContent = String(liCount);
+  }
+
+  // Continue is always on screen (the design shows it as the step's action);
+  // it stays disabled until there is something to send.
+  $('bulk-run-btn').disabled = webCount === 0;
+  $('bulk-run-btn').title = webCount === 0 ? 'Upload a CSV first' : '';
+  $('bulk-run-text').textContent = webCount ? `Continue (${webCount})` : 'Continue';
 }
 
 /** One result row. Text goes in via textContent — a CSV supplies these URLs. */
@@ -1318,11 +1300,15 @@ function setBulkBusy(on, source) {
   _bulkRunning = on;
   $('bulk-run-btn').disabled   = on;
   $('bulk-retry-btn').disabled = on;
+  const liBtn = $('li-bulk-run-btn');
+  if (liBtn) liBtn.disabled = on;
 
   const mainBusy  = on && source === 'main';
   const retryBusy = on && source === 'retry';
   $('bulk-run-spinner').style.display   = mainBusy  ? 'inline-block' : 'none';
-  $('bulk-run-text').textContent        = mainBusy  ? 'Analyzing…' : `Analyze All (${_bulkTotal})`;
+  $('bulk-run-text').textContent        = mainBusy  ? 'Analyzing…'
+    : _bulkWebsiteUrls.length ? `Continue (${_bulkWebsiteUrls.length})` : 'Continue';
+  if (liBtn) $('li-bulk-run-count').textContent = String(_bulkLinkedInUrls.length);
   $('bulk-retry-spinner').style.display = retryBusy ? 'inline-block' : 'none';
   $('bulk-retry-text').textContent      = retryBusy
     ? 'Retrying…'
@@ -1395,22 +1381,24 @@ async function runBulkJobs(entries, token, source) {
   $('bulk-dashboard-link').classList.remove('hidden');
 }
 
-async function handleBulkAnalyze() {
+async function handleBulkAnalyze(scope = 'website') {
   if (_bulkRunning) return;
 
   const auth = await getStoredAuth();
   if (!auth?.token) { syncAuthOverlay(); return; }
 
-  const jobs = [
-    ..._bulkLinkedInUrls.map(url => ({ type: 'linkedin', url })),
-    ..._bulkWebsiteUrls.map(url  => ({ type: 'website',  url })),
-  ];
+  // One screen, one list: the LinkedIn card sends LinkedIn URLs only and the
+  // bulk screen sends website URLs only, even if both CSVs are loaded.
+  const sourceUrls = scope === 'linkedin' ? _bulkLinkedInUrls : _bulkWebsiteUrls;
+  const jobs = sourceUrls.map(url => ({ type: scope, url }));
   if (!jobs.length) return;
 
+  _bulkScope   = scope;
   _bulkBatchId = `bulk-${Date.now().toString(36)}`;
   _bulkTotal   = jobs.length;
   _bulkFailed  = [];
 
+  mountBulkProgress(scope);
   $('bulk-progress-card').classList.remove('hidden');
   $('bulk-dashboard-link').classList.add('hidden');
   setBulkBusy(true, 'main');
@@ -1470,9 +1458,9 @@ function initTabWatcher() {
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 (async () => {
   applyZilvoLinks();
-  initTabBar();
+  initNavigation();
   initListsTab();
-  initManualTab();
+  initBulkTab();
   initTabWatcher();
   await initAuth();
 })();
