@@ -31,7 +31,13 @@ const AUTO_SCRAPE_COOLDOWN_MS = 5 * 60 * 1000;
 // Tab IDs opened by the extension itself for manual analysis — skip auto-scrape for these.
 const _managedTabIds = new Set();
 
+// Analysis is an explicit action now: the panel has an "Analyze LinkedIn URL"
+// button and no auto-run UI, so merely opening a LinkedIn page must not spend
+// credits. Flip this to true to restore analyze-on-page-load.
+const AUTO_ANALYZE_ON_PAGE_LOAD = false;
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (!AUTO_ANALYZE_ON_PAGE_LOAD) return;
   if (changeInfo.status !== 'complete') return;
   if (!tab.url) return;
   if (_managedTabIds.has(tabId)) return; // opened by us — manual analysis handles it
