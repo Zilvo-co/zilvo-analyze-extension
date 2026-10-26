@@ -1047,14 +1047,151 @@ body.auth-locked #icp-bar { display: none !important; }
   flex-shrink: 0;
 }
 
-/* The label sits inline with the select here, so drop the block-level margin
-   .field-label carries for stacked form fields. */
+/* Custom dropdown: a trigger button over the (hidden) native select, with a
+   floating listbox. The native select is kept for state and change events. */
+.icp-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .icp-label {
-  margin-bottom: 0;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--color-muted);
   white-space: nowrap;
 }
 
-.icp-bar .input { padding: 6px 8px; }
+.icp-native { display: none; }
+
+.icp-control {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.icp-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.icp-trigger:hover { border-color: var(--color-border-focus); }
+
+.icp-trigger:focus-visible {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.14);
+}
+
+.icp-trigger[disabled] { opacity: 0.6; cursor: default; }
+
+.icp-trigger-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(47, 150, 184, 0.12);
+  color: var(--color-accent);
+}
+
+.icp-trigger-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icp-chevron {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  transition: transform var(--transition);
+}
+
+.icp-trigger[aria-expanded="true"] .icp-chevron { transform: rotate(180deg); }
+
+.icp-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+}
+
+.icp-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.icp-option:hover { background: rgba(74, 144, 217, 0.08); }
+.icp-option.is-selected { background: rgba(47, 150, 184, 0.10); }
+
+.icp-option-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(47, 150, 184, 0.12);
+  color: var(--color-accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.icp-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icp-option-check {
+  flex-shrink: 0;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 700;
+  visibility: hidden;
+}
+
+.icp-option.is-selected .icp-option-check { visibility: visible; }
 
 /* Empty state — shown instead of the picker when the account has no ICPs. */
 .icp-empty {
