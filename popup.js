@@ -438,7 +438,8 @@ function applyLinkedInDetection(d) {
     // Detection is invisible in the new design: the page you are on simply
     // arrives prefilled in the input. Never overwrite something typed by hand.
     const input = $('li-manual-url');
-    if (input && !input.value.trim() && d.linkedinUrl) input.value = d.linkedinUrl;
+    // Mirrors the detected LinkedIn company page, like the website input.
+    if (input && d.linkedinUrl) input.value = d.linkedinUrl;
   } else {
     $('li-detect-none').classList.remove('hidden');
     // Still allow manual input — no analyze button for auto
@@ -598,7 +599,8 @@ function applyWebsiteDetection(d) {
     $('web-analyze-text').textContent = 'Analyze Website';
     const input = $('web-manual-url');
     const detected = d.websiteUrl || d.currentUrl || '';
-    if (input && !input.value.trim() && detected) input.value = detected;
+    // The input mirrors the tab you are on — a new page must replace the old URL.
+    if (input && detected) input.value = detected;
   } else if (d.type === 'LINKEDIN_COMPANY') {
     $('web-detect-is-linkedin').classList.remove('hidden');
   } else {
@@ -763,9 +765,32 @@ const PENDING_LIST_KEY = 'zilvo_pending_list';
 const PENDING_LIST_TTL_MS = 10 * 60_000;
 
 function initListsTab() {
+  $('lists-project-trigger').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = $('lists-project-menu');
+    if (menu.classList.contains('hidden')) {
+      menu.classList.remove('hidden');
+      $('lists-project-trigger').setAttribute('aria-expanded', 'true');
+    } else {
+      menu.classList.add('hidden');
+      $('lists-project-trigger').setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('click', (e) => {
+    const menu = $('lists-project-menu');
+    if (menu && !menu.classList.contains('hidden') && !e.target.closest('#lists-project-control')) {
+      menu.classList.add('hidden');
+      $('lists-project-trigger').setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    $('lists-project-menu').classList.add('hidden');
+    $('lists-project-trigger').setAttribute('aria-expanded', 'false');
+  });
+
   $('lists-refresh-btn').addEventListener('click', () => loadLists({ force: true }));
   $('lists-back-btn').addEventListener('click', () => selectList(null));
-  $('lists-progress-back-btn').addEventListener('click', () => selectList(null));
   $('lists-analyze-btn').addEventListener('click', () => handleListAnalyze());
 
   // An already-open panel reacts live to "Open in Zilvo Analyze".
@@ -933,22 +958,99 @@ async function selectList(list) {
  */
 async function loadProjects() {
   const select = $('lists-project-select');
+  const menu = $('lists-project-menu');
   const data = await zilvoGet(API.projects);
   _listsProjects = data?.projects || [];
 
   select.innerHTML = '';
+  menu.innerHTML = '';
   const empty = !_listsProjects.length;
   $('lists-project-empty').classList.toggle('hidden', !empty);
-  select.classList.toggle('hidden', empty);
+  $('lists-project-control').classList.toggle('hidden', empty);
   $('lists-analyze-btn').disabled = empty;
 
   for (const project of _listsProjects) {
+    const name = project.companyName || 'Untitled project';
+
     const option = document.createElement('option');
     option.value = project._id;
-    option.textContent = project.companyName || 'Untitled project';
+    option.textContent = name;
     if (project._id === data?.activeId) option.selected = true;
     select.appendChild(option);
+
+    const item = document.createElement('li');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'icp-option';
+    row.dataset.id = project._id;
+    row.setAttribute('role', 'option');
+
+    const dot = document.createElement('span');
+    dot.className = 'icp-option-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    dot.textContent = String(name).trim().charAt(0).toUpperCase() || '?';
+
+    const label = document.createElement('span');
+    label.className = 'icp-option-label';
+    label.textContent = name;
+
+    const check = document.createElement('span');
+    check.className = 'icp-option-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = '✓';
+
+    row.append(dot, label, check);
+    row.addEventListener('click', async () => {
+      select.value = project._id;
+      $('lists-project-menu').classList.add('hidden');
+      $('lists-project-trigger').setAttribute('aria-expanded', 'false');
+      syncProjectTrigger();
+      // Make this the account's active project so the My ICP bar shows THIS
+      // project's positionings — the header picker is scoped to the active
+      // project, while the list run itself is already pinned to this project.
+      await activateProject(project._id);
+    });
+
+    item.appendChild(row);
+    menu.appendChild(item);
   }
+
+  syncProjectTrigger();
+}
+
+/** Activate a project, then refresh the header ICP picker for that project. */
+async function activateProject(projectId) {
+  const auth = await getStoredAuth();
+  if (!auth?.token) return;
+  try {
+    const res = await fetch(`${apiUrl(API.projects)}/${encodeURIComponent(projectId)}`, {
+      method:  'PATCH',
+      headers: {
+        'Content-Type':  'application/json',
+        Authorization:   `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify({ setActive: true }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // The ICP list is project-scoped server-side, so re-fetch it after the
+    // switch. This also updates zilvoIcpId to the new project's default.
+    await initIcpSelector();
+  } catch (err) {
+    console.warn('[Zilvo] project activation failed —', err.message);
+  }
+}
+
+/** Mirror the hidden project select into the visible trigger. */
+function syncProjectTrigger() {
+  const select = $('lists-project-select');
+  const menu = $('lists-project-menu');
+  const current = [...select.options].find((o) => o.value === select.value);
+  $('lists-project-trigger-label').textContent = current?.textContent || 'Select project';
+  menu.querySelectorAll('.icp-option').forEach((row) => {
+    const on = row.dataset.id === select.value;
+    row.classList.toggle('is-selected', on);
+    row.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
 }
 
 async function handleListAnalyze() {
@@ -1126,6 +1228,26 @@ function initBulkTab() {
   $('li-bulk-run-btn').addEventListener('click', () => handleBulkAnalyze('linkedin'));
   $('bulk-run-btn').addEventListener('click',    () => handleBulkAnalyze('website'));
   $('bulk-retry-btn').addEventListener('click', handleBulkRetry);
+
+  // Finish a run and go back to the setup form for the next CSV.
+  $('bulk-new-btn').addEventListener('click', () => {
+    const scope = _bulkScope || 'website';
+    $('bulk-progress-card').classList.add('hidden');
+    $('bulk-results-list').innerHTML = '';
+    $('bulk-progress-fill').style.width = '0%';
+    $('bulk-progress-label').textContent = '0 / 0 completed';
+    _bulkTotal = 0;
+    clearBulkCsv(scope);
+    focusBulkRun(scope, false);
+  });
+}
+
+/** Hide the setup UI while a run is in flight, so the progress card owns the screen. */
+function focusBulkRun(scope, on) {
+  const single = scope === 'linkedin' ? $('li-single-panel') : $('web-single-panel');
+  const form   = scope === 'linkedin' ? $('li-bulk-form')   : $('web-bulk-form');
+  if (single) single.classList.toggle('hidden', on);
+  if (form)   form.classList.toggle('hidden', on);
 }
 
 /** The shared progress card follows whichever screen started the run. */
@@ -1388,6 +1510,7 @@ function setBulkBusy(on, source) {
 
   const mainBusy  = on && source === 'main';
   const retryBusy = on && source === 'retry';
+  $('bulk-new-btn').classList.toggle('hidden', on);
   $('bulk-run-spinner').style.display   = mainBusy  ? 'inline-block' : 'none';
   $('bulk-run-text').textContent        = mainBusy  ? 'Analyzing…'
     : _bulkWebsiteUrls.length
@@ -1486,6 +1609,7 @@ async function handleBulkAnalyze(scope = 'website') {
   mountBulkProgress(scope);
   $('bulk-progress-card').classList.remove('hidden');
   $('bulk-dashboard-link').classList.add('hidden');
+  focusBulkRun(scope, true);
   setBulkBusy(true, 'main');
 
   // Build per-item rows
@@ -1520,7 +1644,9 @@ async function handleBulkRetry() {
 function initTabWatcher() {
   // Re-detect when the current tab finishes navigating to a new URL
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
-    if (changeInfo.status !== 'complete') return;
+    // 'complete' covers normal navigations; a bare URL change covers SPA
+    // route transitions that never reload the document.
+    if (changeInfo.status !== 'complete' && !changeInfo.url) return;
     // Ignore background tabs that aren't the one we're watching
     if (_detection?.tabId && tabId !== _detection.tabId) return;
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
