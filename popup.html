@@ -42,9 +42,29 @@
          none — an ICP can only be authored in the web app, so the popup sends
          the user there rather than showing a select with nothing in it. -->
     <div id="icp-bar" class="icp-bar hidden">
-      <div id="icp-picker" class="input-row hidden">
-        <label class="field-label icp-label" for="icp-select">My ICP</label>
-        <select id="icp-select" class="input" title="Also becomes your default ICP across Zilvo"></select>
+      <div id="icp-picker" class="icp-picker hidden">
+        <span id="icp-label" class="icp-label">My ICP</span>
+        <div class="icp-control">
+          <!-- Kept for state/handlers; the button below is the visible control. -->
+          <select id="icp-select" class="icp-native" tabindex="-1" aria-hidden="true"></select>
+          <button id="icp-trigger" class="icp-trigger" type="button"
+                  aria-labelledby="icp-label icp-trigger-label"
+                  aria-haspopup="listbox" aria-expanded="false"
+                  title="Also becomes your default ICP across Zilvo">
+            <span class="icp-trigger-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor"
+                   stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6"/>
+              </svg>
+            </span>
+            <span id="icp-trigger-label" class="icp-trigger-label">Select ICP</span>
+            <svg class="icp-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 6.5 8 10.5l4-4"/>
+            </svg>
+          </button>
+          <ul id="icp-menu" class="icp-menu hidden" role="listbox" aria-label="My ICP"></ul>
+        </div>
       </div>
 
       <div id="icp-empty" class="icp-empty hidden">
@@ -124,25 +144,6 @@
             </svg>
           </button>
 
-          <button type="button" class="home-card home-card--violet" data-view-target="linkedin-bulk">
-            <span class="home-card-icon home-card-icon--violet">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/>
-                <path d="M13.8 3.6v3.6h3.5"/>
-                <path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/>
-              </svg>
-            </span>
-            <span class="home-card-body">
-              <span class="home-card-title">Analyze LinkedIn companies in bulk</span>
-              <span class="home-card-sub">Upload a CSV of LinkedIn company URLs for bulk scoring.</span>
-            </span>
-            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M6 3.5 10.5 8 6 12.5"/>
-            </svg>
-          </button>
-
           <button type="button" class="home-card home-card--blue" data-view-target="website">
             <span class="home-card-icon home-card-icon--blue">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -152,27 +153,8 @@
               </svg>
             </span>
             <span class="home-card-body">
-              <span class="home-card-title">Analyze one single website</span>
+              <span class="home-card-title">Analyze website</span>
               <span class="home-card-sub">Evaluate the current company website or enter a URL.</span>
-            </span>
-            <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M6 3.5 10.5 8 6 12.5"/>
-            </svg>
-          </button>
-
-          <button type="button" class="home-card home-card--violet" data-view-target="bulk">
-            <span class="home-card-icon home-card-icon--violet">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/>
-                <path d="M13.8 3.6v3.6h3.5"/>
-                <path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/>
-              </svg>
-            </span>
-            <span class="home-card-body">
-              <span class="home-card-title">Analyze websites in bulk</span>
-              <span class="home-card-sub">Use extracted lists or upload a CSV for bulk scoring.</span>
             </span>
             <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -199,7 +181,7 @@
             </svg>
           </button>
 
-          <a class="home-card home-card--mint home-card--results" data-zilvo-link="dashboard"
+          <a class="home-card home-card--mint home-card--results" data-zilvo-link="overview"
              target="_blank" rel="noopener">
             <span class="home-card-icon home-card-icon--mint">
               <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -210,7 +192,7 @@
             </span>
             <span class="home-card-body">
               <span class="home-card-title">View all analysis results</span>
-              <span class="home-card-sub">Open Zilvo dashboard
+              <span class="home-card-sub">Open Zilvo Analyze overview
                 <svg class="home-card-ext" viewBox="0 0 16 16" fill="none" stroke="currentColor"
                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M6 3h7v7"/><path d="M13 3 5.5 10.5"/>
@@ -308,8 +290,8 @@
       <div class="main page-main">
 
         <div class="page-head">
-          <h1 class="page-title">Analyze company&rsquo;s LinkedIn profile</h1>
-          <p class="page-sub">Resolve a company&rsquo;s website and qualify it in one step.</p>
+          <h1 class="page-title">Analyze LinkedIn companies</h1>
+          <p class="page-sub">Analyze one LinkedIn company or upload a list.</p>
         </div>
 
         <!-- One company -->
@@ -329,6 +311,47 @@
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
           </button>
+        </section>
+
+        <!-- Bulk — same page, its own panel -->
+        <section class="panel panel--violet">
+          <div class="panel-head">
+            <span class="panel-icon panel-icon--violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/><path d="M13.8 3.6v3.6h3.5"/><path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/></svg></span>
+            <h2 class="panel-title">Analyze LinkedIn companies in bulk</h2>
+          </div>
+          <p class="panel-sub">Upload a CSV containing LinkedIn company URLs.</p>
+
+          <input type="file" id="li-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
+          <label for="li-csv-input" class="btn btn-amber btn--file">
+            Upload CSV
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+          </label>
+
+          <div class="panel-links panel-links--center">
+            <button id="li-csv-example-btn" class="sample-link" type="button">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M3 13h10"/></svg>
+              Download sample CSV
+            </button>
+            <button id="li-csv-clear-btn" class="pill-btn pill-danger hidden" type="button">Clear</button>
+          </div>
+
+          <div id="li-csv-preview" class="hidden">
+            <p id="li-csv-count" class="bulk-count"></p>
+            <ul id="li-csv-list" class="bulk-url-list"></ul>
+          </div>
+          <p id="li-csv-error" class="field-error" aria-live="polite"></p>
+
+          <p class="panel-foot">Original LinkedIn URLs are preserved with each result.</p>
+
+          <button id="li-bulk-run-btn" class="btn btn-amber hidden" type="button">
+            Analyze <span id="li-bulk-run-count">0</span> LinkedIn companies
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+          </button>
+
+          <div id="li-bulk-progress-host"></div>
         </section>
 
         <!-- Result of the last single-company analysis -->
@@ -375,104 +398,96 @@
       </div>
     </div>
 
-    <!-- ══════════════════ LINKEDIN IN BULK ═══════════════════════════════════ -->
-    <div id="tab-linkedin-bulk" class="view tab-content hidden" data-view="linkedin-bulk">
+    <!-- ══════════════════ SINGLE WEBSITE ═════════════════════════════════════ -->
+    <div id="tab-website" class="view tab-content hidden" data-view="website">
       <div class="main page-main">
 
         <div class="page-head">
-          <h1 class="page-title">Analyze LinkedIn companies in bulk</h1>
-          <p class="page-sub">Upload a CSV containing LinkedIn company URLs.</p>
+          <h1 class="page-title">Analyze websites</h1>
+          <p class="page-sub">Analyze one website or upload a list.</p>
         </div>
 
-        <!-- A list of companies -->
+        <!-- One website -->
+        <section class="panel panel--blue">
+          <div class="panel-head">
+            <span class="panel-icon panel-icon--blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 3.9 5.7 3.9 9s-1.3 6.4-3.9 9c-2.6-2.6-3.9-5.7-3.9-9S9.4 5.6 12 3z"/></svg></span>
+            <h2 class="panel-title">Analyze one website</h2>
+          </div>
+          <p class="panel-sub">Enter a company website URL to analyze its business and ICP fit.</p>
+
+          <input type="url" id="web-manual-url" class="input input--lg" placeholder="example.com"
+                 autocomplete="off" spellcheck="false"/>
+          <p id="web-manual-error" class="field-error" aria-live="polite"></p>
+
+          <button id="web-manual-btn" class="btn btn-amber" type="button">
+            Analyze website URL
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+          </button>
+        </section>
+
+        <!-- Bulk — same page, its own panel -->
         <section class="panel panel--violet">
           <div class="panel-head">
             <span class="panel-icon panel-icon--violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h7.6l3.4 3.4v13.6H6.5z"/><path d="M13.8 3.6v3.6h3.5"/><path d="M9.5 11.5h5M9.5 14.8h5M9.5 18.1h3"/></svg></span>
-            <h2 class="panel-title">LinkedIn company URLs</h2>
+            <h2 class="panel-title">Analyze websites in bulk</h2>
           </div>
-          <p class="panel-sub">One LinkedIn company URL per row &mdash; up to 10,000 rows.</p>
+          <p class="panel-sub">Upload a CSV containing company website URLs.</p>
 
-          <input type="file" id="li-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
-          <label for="li-csv-input" class="btn btn-amber btn--file">
+          <input type="file" id="web-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
+          <label for="web-csv-input" class="btn btn-amber btn--file">
             Upload CSV
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
           </label>
 
           <div class="panel-links panel-links--center">
-            <button id="li-csv-example-btn" class="sample-link" type="button">
+            <button id="web-csv-example-btn" class="sample-link" type="button">
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9"
                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M3 13h10"/></svg>
               Download sample CSV
             </button>
-            <button id="li-csv-clear-btn" class="pill-btn pill-danger hidden" type="button">Clear</button>
+            <button id="web-csv-clear-btn" class="pill-btn pill-danger hidden" type="button">Clear</button>
           </div>
 
-          <div id="li-csv-preview" class="hidden">
-            <p id="li-csv-count" class="bulk-count"></p>
-            <ul id="li-csv-list" class="bulk-url-list"></ul>
+          <div id="web-csv-preview" class="hidden">
+            <p id="web-csv-count" class="bulk-count"></p>
+            <ul id="web-csv-list" class="bulk-url-list"></ul>
           </div>
-          <p id="li-csv-error" class="field-error" aria-live="polite"></p>
+          <p id="web-csv-error" class="field-error" aria-live="polite"></p>
 
-          <p class="panel-foot">Original LinkedIn URLs are preserved with each result.</p>
+          <p class="panel-foot">Original company URLs are preserved with each result.</p>
 
-          <button id="li-bulk-run-btn" class="btn btn-amber hidden" type="button">
-            Analyze <span id="li-bulk-run-count">0</span> LinkedIn companies
+          <button id="bulk-run-btn" class="btn btn-amber hidden" type="button">
+            <span id="bulk-run-text">Analyze websites</span>
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
+            <span id="bulk-run-spinner" class="spinner" aria-hidden="true"></span>
           </button>
 
-          <div id="li-bulk-progress-host"></div>
-        </section>
-
-        <div class="page-actions">
-          <button class="btn btn-back" type="button" data-view-target="home">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
-            Back
-          </button>
-        </div>
-
-        <footer class="page-footer">
-          <p>Your input is saved automatically</p>
-          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
-        </footer>
-      </div>
-    </div>
-
-    <!-- ══════════════════ SINGLE WEBSITE ═════════════════════════════════════ -->
-    <div id="tab-website" class="view tab-content hidden" data-view="website">
-      <div class="main page-main">
-
-        <div class="page-head">
-          <h1 class="page-title">Analyze a single website</h1>
-          <p class="page-sub">Enter a company website URL and analyze its business and ICP fit.</p>
-        </div>
-
-        <section class="panel">
-          <h2 class="panel-title">Company website URL</h2>
-          <p class="panel-sub">Enter the official website to analyze.</p>
-
-          <div class="input-shell">
-            <svg class="input-shell-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h7v7"/><path d="M13 3 5.5 10.5"/></svg>
-            <input type="url" id="web-manual-url" class="input input--lg input--with-icon"
-                   placeholder="https://www.example.com" autocomplete="off" spellcheck="false"/>
+          <div id="web-bulk-progress-host">
+            <div id="bulk-progress-card" class="card hidden">
+              <div class="section-label">Progress</div>
+              <div class="bulk-progress">
+                <div class="progress-track">
+                  <div class="progress-fill" id="bulk-progress-fill"></div>
+                </div>
+                <p id="bulk-progress-label" class="hint" style="margin-top:4px"></p>
+              </div>
+              <ul id="bulk-results-list" class="bulk-results"></ul>
+              <button id="bulk-retry-btn" class="btn btn-secondary hidden" type="button">
+                <span id="bulk-retry-text">Retry failed</span>
+                <span id="bulk-retry-spinner" class="spinner" aria-hidden="true"></span>
+              </button>
+              <a data-zilvo-link="overview" target="_blank" rel="noopener"
+                 id="bulk-dashboard-link"
+                 class="btn btn-secondary hidden" style="text-decoration:none">
+                Open Zilvo Dashboard →
+              </a>
+            </div>
           </div>
-          <p id="web-manual-error" class="field-error" aria-live="polite"></p>
-
-          <p class="panel-hint">
-            <span class="info-dot" aria-hidden="true">i</span>
-            Use the company&rsquo;s main homepage for best results.
-          </p>
         </section>
 
-        <section class="panel panel--info">
-          <p class="info-title">
-            <span class="info-dot" aria-hidden="true">i</span>
-            Ready to analyze
-          </p>
-          <p class="panel-sub">The URL stays linked to the company&rsquo;s results.</p>
-        </section>
 
         <!-- Result of the last website analysis -->
         <div id="web-result-card" class="card result-card hidden">
@@ -502,107 +517,6 @@
           <button class="btn btn-back" type="button" data-view-target="home">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
             Back
-          </button>
-          <button id="web-manual-btn" class="btn btn-amber btn--inline" type="button">
-            Continue
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
-          </button>
-        </div>
-
-        <footer class="page-footer">
-          <p>Your input is saved automatically</p>
-          <p>Zilvo Analyze<span class="page-footer-sep">·</span>Company intelligence</p>
-        </footer>
-
-      </div>
-    </div>
-
-    <!-- ══════════════════ BULK WEBSITES ══════════════════════════════════════ -->
-    <div id="tab-bulk" class="view tab-content hidden" data-view="bulk">
-      <div class="main page-main">
-
-        <div class="page-head">
-          <h1 class="page-title">Analyze websites in bulk</h1>
-          <p class="page-sub">Upload a CSV to analyze multiple company websites.</p>
-        </div>
-
-        <section class="panel">
-          <label class="dropzone" for="web-csv-input" id="web-csv-zone">
-            <span class="dropzone-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5"/><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="M5 16.5v2.2A1.3 1.3 0 0 0 6.3 20h11.4a1.3 1.3 0 0 0 1.3-1.3v-2.2"/></svg></span>
-            <span class="dropzone-heading">Upload company URL CSV</span>
-            <span class="dropzone-sub" id="web-csv-zone-label">Drop your CSV here or browse files</span>
-            <span class="dropzone-btn">Choose file</span>
-            <span class="dropzone-note">CSV · Up to 10,000 rows</span>
-            <input type="file" id="web-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
-          </label>
-
-          <div id="web-csv-preview" class="hidden">
-            <p id="web-csv-count" class="bulk-count"></p>
-            <ul id="web-csv-list" class="bulk-url-list"></ul>
-          </div>
-          <p id="web-csv-error" class="field-error" aria-live="polite"></p>
-
-          <div class="req-block">
-            <p class="req-title">CSV requirements</p>
-            <ul class="req-list">
-              <li>One company website URL per row</li>
-              <li>Columns: website, url, domain or company_website</li>
-            </ul>
-          </div>
-        </section>
-
-        <div class="panel-links panel-links--outside">
-          <button id="web-csv-example-btn" class="sample-link" type="button">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M3 13h10"/></svg>
-            Download sample CSV
-          </button>
-          <button id="web-csv-clear-btn" class="pill-btn pill-danger hidden" type="button">Clear</button>
-        </div>
-
-        <section class="panel panel--info">
-          <p class="info-title">
-            <span class="info-dot" aria-hidden="true">i</span>
-            Original file is preserved
-          </p>
-          <p class="panel-sub">You can return to this step before starting analysis.</p>
-        </section>
-
-        <div id="web-bulk-progress-host">
-          <!-- Bulk progress / results. JS moves this card into the LinkedIn view
-               when a LinkedIn list run starts, so both screens share one run. -->
-          <div id="bulk-progress-card" class="card hidden">
-            <div class="section-label">Progress</div>
-            <div class="bulk-progress">
-              <div class="progress-track">
-                <div class="progress-fill" id="bulk-progress-fill"></div>
-              </div>
-              <p id="bulk-progress-label" class="hint" style="margin-top:4px"></p>
-            </div>
-            <ul id="bulk-results-list" class="bulk-results"></ul>
-            <button id="bulk-retry-btn" class="btn btn-secondary hidden" type="button">
-              <span id="bulk-retry-text">Retry failed</span>
-              <span id="bulk-retry-spinner" class="spinner" aria-hidden="true"></span>
-            </button>
-            <a data-zilvo-link="overview" target="_blank" rel="noopener"
-               id="bulk-dashboard-link"
-               class="btn btn-secondary hidden" style="text-decoration:none">
-              Open Zilvo Dashboard →
-            </a>
-          </div>
-        </div>
-
-        <div class="page-actions">
-          <button class="btn btn-back" type="button" data-view-target="home">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/></svg>
-            Back
-          </button>
-          <button id="bulk-run-btn" class="btn btn-amber btn--inline" type="button">
-            <span id="bulk-run-text">Continue</span>
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h10"/><path d="M9 4.5 12.5 8 9 11.5"/></svg>
-            <span id="bulk-run-spinner" class="spinner" aria-hidden="true"></span>
           </button>
         </div>
 

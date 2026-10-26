@@ -8,6 +8,8 @@ import type { CIBackgroundMessage, CreditState, LinkedInCompanyData } from '../.
 interface Props extends CreditState {
   onLogout: () => void;
   userName: string;
+  /** Opens the LinkedIn bulk flow (CSV / multi-URL) from this section. */
+  onBulk: () => void;
 }
 
 type State =
@@ -19,7 +21,7 @@ type State =
   | { status: 'success'; baseUrl: string }
   | { status: 'error'; error: string; code?: number; required?: number; remaining?: number };
 
-export default function LinkedInDetect({ onLogout, userName, credits, creditCost, refreshCredits }: Props) {
+export default function LinkedInDetect({ onLogout, userName, credits, creditCost, refreshCredits, onBulk }: Props) {
   const [state,   setState]   = useState<State>({ status: 'checking' });
   const [baseUrl, setBaseUrl] = useState(ZILVO_APP_DEFAULT);
 
@@ -135,6 +137,10 @@ export default function LinkedInDetect({ onLogout, userName, credits, creditCost
             to auto-detect company data.
           </p>
         </div>
+
+        <button className="btn btn--secondary" onClick={onBulk}>
+          Analyze LinkedIn companies in bulk →
+        </button>
       </div>
     );
   }
@@ -265,6 +271,16 @@ export default function LinkedInDetect({ onLogout, userName, credits, creditCost
         >
           Analyze Company
         </button>
+
+        <div style={{ borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
+          <button
+            className="btn btn--secondary"
+            style={{ width: '100%', fontSize: 12 }}
+            onClick={onBulk}
+          >
+            Analyze LinkedIn companies in bulk →
+          </button>
+        </div>
       </div>
     </div>
   );

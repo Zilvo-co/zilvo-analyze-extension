@@ -8,7 +8,7 @@ import { getCredits, getActionCost, getICPs, setDefaultICP, type ZilvoIcp } from
 import { CI_ANALYZE_ACTION, CI_ANALYZE_FALLBACK_COST } from '../utils/credits';
 import { getZilvoAppUrl, APP, appUrl } from '../config';
 
-type ActiveTab = 'linkedin' | 'website' | 'manual';
+type ActiveTab = 'linkedin' | 'website' | 'bulk';
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
@@ -202,11 +202,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* Tab switcher */}
+      {/* Tab switcher — bulk LinkedIn analysis lives inside the LinkedIn
+          section, so it does not need a tab of its own. */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 10px' }}>
         <button style={tabStyle('linkedin')} onClick={() => setActiveTab('linkedin')}>LI Company</button>
         <button style={tabStyle('website')}  onClick={() => setActiveTab('website')}>Website</button>
-        <button style={tabStyle('manual')}   onClick={() => setActiveTab('manual')}>Bulk Upload</button>
       </div>
 
       {/* ICPs are authored in the web app, so an account with none gets a link to
@@ -243,9 +243,9 @@ export default function App() {
       )}
 
       <main className="app-main">
-        {activeTab === 'linkedin' && <LinkedInDetect onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
+        {activeTab === 'linkedin' && <LinkedInDetect onLogout={handleLogout} userName={zilvoName || 'User'} onBulk={() => setActiveTab('bulk')} {...creditState} />}
         {activeTab === 'website'  && <WebsiteDetect  onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
-        {activeTab === 'manual'   && <BulkAnalyze    onLogout={handleLogout} userName={zilvoName || 'User'} {...creditState} />}
+        {activeTab === 'bulk'     && <BulkAnalyze    onLogout={handleLogout} userName={zilvoName || 'User'} onBack={() => setActiveTab('linkedin')} {...creditState} />}
       </main>
     </div>
   );

@@ -8,6 +8,8 @@ import type { CIBackgroundMessage, CreditState } from '../../types';
 interface Props extends CreditState {
   onLogout: () => void;
   userName: string;
+  /** Returns to the LinkedIn section this flow is opened from. */
+  onBack: () => void;
 }
 
 interface BulkItem {
@@ -18,7 +20,7 @@ interface BulkItem {
 
 type Mode = 'input' | 'processing' | 'done';
 
-export default function BulkAnalyze({ onLogout, userName, credits, creditCost, refreshCredits }: Props) {
+export default function BulkAnalyze({ onLogout, userName, credits, creditCost, refreshCredits, onBack }: Props) {
   const [mode, setMode]       = useState<Mode>('input');
   const [text, setText]       = useState('');
   const [inputError, setInputError] = useState('');
@@ -170,6 +172,17 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
   if (mode === 'input') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <button
+            onClick={onBack}
+            style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 6 }}
+          >
+            ← Back to LinkedIn
+          </button>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>Analyze LinkedIn companies in bulk</p>
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>Add LinkedIn company URLs — one per line — for bulk scoring.</p>
+        </div>
+
         {authStrip}
 
         {/* Cost info bar */}
@@ -268,6 +281,7 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
               </button>
             )}
             <button className="btn btn--secondary" onClick={handleReset}>Analyze More</button>
+            <button className="btn btn--secondary" onClick={onBack}>← Back to LinkedIn</button>
           </div>
         </div>
 

@@ -92,6 +92,21 @@ async function initAuth() {
 
   icpSelect.addEventListener('change', onIcpChange);
 
+  icpTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (icpTrigger.disabled) return;
+    if (icpMenu.classList.contains('hidden')) openIcpMenu();
+    else closeIcpMenu();
+  });
+
+  // Click-away and Escape close the listbox, like any native dropdown.
+  document.addEventListener('click', (e) => {
+    if (!icpMenu.classList.contains('hidden') && !e.target.closest('#icp-picker')) closeIcpMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeIcpMenu();
+  });
+
   // ICPs are authored in the web app, so the empty state just sends the user
   // to My ICP. Opening a tab closes the popup; the list is re-fetched on the
   // next open, so the new ICP shows up without any extra refresh wiring.
@@ -183,6 +198,9 @@ const icpSelect = $('icp-select');
 const icpEmpty  = $('icp-empty');
 const icpAddBtn = $('icp-add-btn');
 const icpError  = $('icp-error');
+const icpTrigger      = $('icp-trigger');
+const icpTriggerLabel = $('icp-trigger-label');
+const icpMenu         = $('icp-menu');
 
 let _icps = [];
 
@@ -205,12 +223,70 @@ function renderIcpOptions() {
   // No "(default)" marker: the selected ICP *is* the default, so the label
   // would follow the selection around and read as noise.
   icpSelect.innerHTML = '';
+  icpMenu.innerHTML = '';
   for (const icp of _icps) {
     const option = document.createElement('option');
     option.value = icp._id;
     option.textContent = icp.name;
     icpSelect.appendChild(option);
+
+    // Visible listbox row. The native select stays the source of truth.
+    const item = document.createElement('li');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'icp-option';
+    row.dataset.id = icp._id;
+    row.setAttribute('role', 'option');
+
+    const dot = document.createElement('span');
+    dot.className = 'icp-option-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    dot.textContent = String(icp.name || '?').trim().charAt(0).toUpperCase() || '?';
+
+    const label = document.createElement('span');
+    label.className = 'icp-option-label';
+    label.textContent = icp.name;
+
+    const check = document.createElement('span');
+    check.className = 'icp-option-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = '✓';
+
+    row.append(dot, label, check);
+    row.addEventListener('click', () => {
+      closeIcpMenu();
+      if (icpSelect.value === icp._id) return;
+      icpSelect.value = icp._id;
+      icpSelect.dispatchEvent(new Event('change'));
+    });
+
+    item.appendChild(row);
+    icpMenu.appendChild(item);
   }
+  syncIcpTrigger();
+}
+
+/** Mirror the native select into the visible trigger + option states. */
+function syncIcpTrigger() {
+  const current = _icps.find(i => i._id === icpSelect.value);
+  icpTriggerLabel.textContent = current?.name || 'Select ICP';
+  icpTrigger.disabled = icpSelect.disabled;
+  icpTrigger.setAttribute('aria-expanded', icpMenu.classList.contains('hidden') ? 'false' : 'true');
+  icpMenu.querySelectorAll('.icp-option').forEach(row => {
+    const on = row.dataset.id === icpSelect.value;
+    row.classList.toggle('is-selected', on);
+    row.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+
+function openIcpMenu() {
+  icpMenu.classList.remove('hidden');
+  icpTrigger.setAttribute('aria-expanded', 'true');
+}
+
+function closeIcpMenu() {
+  icpMenu.classList.add('hidden');
+  icpTrigger.setAttribute('aria-expanded', 'false');
 }
 
 async function initIcpSelector() {
@@ -257,6 +333,7 @@ async function initIcpSelector() {
     _icps[0]._id;
 
   icpSelect.value = keep;
+  syncIcpTrigger();
   await chrome.storage.local.set({ [ICP_KEY]: keep });
   showIcpError('');
   setIcpState('picker');
@@ -274,6 +351,7 @@ async function onIcpChange() {
   if (!auth?.token) return;
 
   icpSelect.disabled = true;
+  syncIcpTrigger();
   try {
     const res = await fetch(`${apiUrl(API.icp)}/${encodeURIComponent(id)}/default`, {
       method:  'POST',
@@ -293,6 +371,7 @@ async function onIcpChange() {
     showIcpError('Could not set default — try again.');
   } finally {
     icpSelect.disabled = false;
+    syncIcpTrigger();
   }
 }
 
@@ -1256,11 +1335,15 @@ function updateBulkRunBtn() {
     $('li-bulk-run-count').textContent = String(liCount);
   }
 
-  // Continue is always on screen (the design shows it as the step's action);
-  // it stays disabled until there is something to send.
-  $('bulk-run-btn').disabled = webCount === 0;
-  $('bulk-run-btn').title = webCount === 0 ? 'Upload a CSV first' : '';
-  $('bulk-run-text').textContent = webCount ? `Continue (${webCount})` : 'Continue';
+  // Same pattern as the LinkedIn panel: the run action appears once a CSV is
+  // loaded, labelled with how many websites it will analyze.
+  const webBtn = $('bulk-run-btn');
+  webBtn.disabled = webCount === 0;
+  webBtn.title = webCount === 0 ? 'Upload a CSV first' : '';
+  webBtn.classList.toggle('hidden', webCount === 0);
+  $('bulk-run-text').textContent = webCount
+    ? `Analyze ${webCount} ${webCount === 1 ? 'website' : 'websites'}`
+    : 'Analyze websites';
 }
 
 /** One result row. Text goes in via textContent — a CSV supplies these URLs. */
@@ -1307,7 +1390,9 @@ function setBulkBusy(on, source) {
   const retryBusy = on && source === 'retry';
   $('bulk-run-spinner').style.display   = mainBusy  ? 'inline-block' : 'none';
   $('bulk-run-text').textContent        = mainBusy  ? 'Analyzing…'
-    : _bulkWebsiteUrls.length ? `Continue (${_bulkWebsiteUrls.length})` : 'Continue';
+    : _bulkWebsiteUrls.length
+      ? `Analyze ${_bulkWebsiteUrls.length} ${_bulkWebsiteUrls.length === 1 ? 'website' : 'websites'}`
+      : 'Analyze websites';
   if (liBtn) $('li-bulk-run-count').textContent = String(_bulkLinkedInUrls.length);
   $('bulk-retry-spinner').style.display = retryBusy ? 'inline-block' : 'none';
   $('bulk-retry-text').textContent      = retryBusy
