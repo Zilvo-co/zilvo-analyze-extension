@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "webpack --mode development --watch",
     "build": "webpack --mode production",
+    "package": "bash scripts/package.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

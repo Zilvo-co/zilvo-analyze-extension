@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 
+# Web Store uploads
+*.zip
+
 # Environment variables
 .env
 .env.local

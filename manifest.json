@@ -1,34 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "Zilvo Analyze",
-  "version": "1.1.0",
-  "description": "Company Intelligence: analyze companies from LinkedIn or any website and send data to Zilvo AI.",
-
+  "name": "Zilvo Company Analyzer - AI Company Research",
+  "version": "1.1.1",
+  "description": "Analyze company websites and LinkedIn company pages with AI. Research businesses, identify target customers, and check ICP fit.",
   "icons": {
-    "16":  "icons/icon16.png",
-    "32":  "icons/icon32.png",
-    "48":  "icons/icon48.png",
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-
   "action": {
     "default_icon": {
-      "16":  "icons/icon16.png",
-      "48":  "icons/icon48.png",
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Zilvo Analyze"
+    "default_title": "Zilvo Company Analyzer - AI Company Research"
   },
-
   "side_panel": {
     "default_path": "popup.html"
   },
-
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-
   "permissions": [
     "tabs",
     "activeTab",
@@ -36,15 +31,21 @@
     "storage",
     "sidePanel"
   ],
-
   "content_scripts": [
     {
-      "matches": ["https://app.zilvo.co/*", "https://zilvo.co/*", "https://www.zilvo.co/*", "http://localhost:3000/*", "http://localhost:3001/*"],
-      "js": ["content_zilvo.js"],
+      "matches": [
+        "https://app.zilvo.co/*",
+        "https://zilvo.co/*",
+        "https://www.zilvo.co/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": [
+        "content_zilvo.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://zilvo.co/*",
