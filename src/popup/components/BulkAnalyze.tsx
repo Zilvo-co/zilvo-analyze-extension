@@ -29,6 +29,10 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
   const [baseUrl, setBaseUrl] = useState(ZILVO_APP_DEFAULT);
   const currentIdx            = useRef(0);
   const batchIdRef            = useRef<string>('');
+  // Paused mid-batch: the popup stops handing the next URL to the background, and
+  // the server parks anything already queued for this batch.
+  const pausedRef             = useRef(false);
+  const [paused, setPaused]   = useState(false);
 
   // A batch needs at least one analysis' worth of credits to be worth starting.
   const affordable = canAfford(credits, creditCost);
@@ -62,6 +66,12 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
           const nextIdx = currentIdx.current + 1;
           if (nextIdx < next.length) {
             currentIdx.current = nextIdx;
+            // Paused between companies: hold the next URL here, do not dispatch.
+            if (pausedRef.current) {
+              return next.map((it, i) =>
+                i === nextIdx ? { ...it, status: 'pending' as const, message: 'Paused' } : it
+              );
+            }
             chrome.runtime.sendMessage({
               type:           'ANALYZE_FOR_CI',
               linkedinUrl:    next[nextIdx].url,
@@ -93,6 +103,11 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
           const nextIdx = currentIdx.current + 1;
           if (!outOfCredits && nextIdx < next.length) {
             currentIdx.current = nextIdx;
+            if (pausedRef.current) {
+              return next.map((it, i) =>
+                i === nextIdx ? { ...it, status: 'pending' as const, message: 'Paused' } : it
+              );
+            }
             chrome.runtime.sendMessage({
               type:           'ANALYZE_FOR_CI',
               linkedinUrl:    next[nextIdx].url,
@@ -155,7 +170,72 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
     setCreditsExhausted(false);
     currentIdx.current = 0;
     batchIdRef.current = '';
+    pausedRef.current = false;
+    setPaused(false);
     setMode('input');
+  };
+
+  /**
+   * Pause / resume the batch.
+   *
+   * Two halves: locally, stop handing the next URL to the background (the popup
+   * runs one company at a time); remotely, park the batch so rows already queued
+   * are not analysed and the pause survives closing the popup.
+   */
+  const togglePause = () => {
+    const next = !pausedRef.current;
+    pausedRef.current = next;
+    setPaused(next);
+
+    chrome.runtime
+      .sendMessage({ type: next ? 'PAUSE_CI_BATCH' : 'RESUME_CI_BATCH', batchId: batchIdRef.current })
+      .catch(() => { /* the local pause still holds */ });
+
+    if (!next) {
+      // Resume: dispatch the company we were parked on.
+      const idx = currentIdx.current;
+      const parked = items[idx];
+      if (!parked || parked.status !== 'pending') return;
+      chrome.runtime.sendMessage({
+        type:           'ANALYZE_FOR_CI',
+        linkedinUrl:    parked.url,
+        userInputField: parked.url,
+        batchId:        batchIdRef.current,
+      });
+      setItems(prev => prev.map((it, i) =>
+        i === idx ? { ...it, status: 'processing' as const, message: 'Analyzing…' } : it
+      ));
+    }
+  };
+
+  /**
+   * Retry only the companies that failed.
+   *
+   * The done screen used to offer "View in Dashboard" whatever happened, so a run
+   * where every company failed ended on a success-shaped CTA and no reason. This
+   * re-runs exactly the failed URLs as a fresh batch.
+   */
+  const retryFailed = () => {
+    const failed = items.filter(it => it.status === 'error');
+    if (!failed.length || !canAfford(credits, creditCost)) return;
+    const nextItems: BulkItem[] = failed.map((it, i) => ({
+      url: it.url,
+      status: i === 0 ? 'processing' : 'pending',
+      message: i === 0 ? 'Analyzing…' : undefined,
+    }));
+    batchIdRef.current = `bulk-${Date.now().toString(36)}`;
+    currentIdx.current = 0;
+    pausedRef.current = false;
+    setPaused(false);
+    setCreditsExhausted(false);
+    setItems(nextItems);
+    setMode('processing');
+    chrome.runtime.sendMessage({
+      type:           'ANALYZE_FOR_CI',
+      linkedinUrl:    nextItems[0].url,
+      userInputField: nextItems[0].url,
+      batchId:        batchIdRef.current,
+    });
   };
 
   const authStrip = (
@@ -240,6 +320,9 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
 
   const doneCount  = items.filter(it => it.status === 'done').length;
   const errorCount = items.filter(it => it.status === 'error').length;
+  const allFailed  = doneCount === 0 && errorCount > 0;
+  // One reason is enough to act on; the per-URL rows below carry the rest.
+  const firstError = items.find(it => it.status === 'error')?.message;
 
   if (mode === 'done') {
     return (
@@ -249,20 +332,26 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
           <div
             className="error-icon"
             style={
-              creditsExhausted
+              creditsExhausted || allFailed
                 ? { background: 'rgba(217,119,6,0.12)', color: 'var(--warning, #d97706)', fontSize: 22 }
                 : { background: 'rgba(5,150,105,0.12)', color: 'var(--success)', fontSize: 22 }
             }
           >
-            {creditsExhausted ? '!' : '✓'}
+            {creditsExhausted || allFailed ? '!' : '✓'}
           </div>
           <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {creditsExhausted ? 'Stopped — out of credits' : 'Bulk analysis complete'}
+            {creditsExhausted
+              ? 'Stopped — out of credits'
+              : allFailed
+                ? 'Bulk analysis failed'
+                : 'Bulk analysis complete'}
           </p>
           <p className="error-message" style={{ color: 'var(--muted)' }}>
-            {doneCount} saved{errorCount > 0 ? `, ${errorCount} failed` : ''}.{' '}
-            {doneCount * creditCost} credits used.
-            {creditsExhausted && ' Top up to analyze the rest.'}
+            {creditsExhausted
+              ? `${doneCount} saved${errorCount > 0 ? `, ${errorCount} skipped` : ''}. ${doneCount * creditCost} credits used. Top up to analyze the rest.`
+              : allFailed
+                ? `${errorCount} compan${errorCount === 1 ? 'y' : 'ies'} could not be analyzed.${firstError ? ` Reason: ${firstError}` : ''}`
+                : `${doneCount} saved${errorCount > 0 ? `, ${errorCount} failed${firstError ? ` (${firstError})` : ''}` : ''}. ${doneCount * creditCost} credits used.`}
           </p>
           <div className="error-actions">
             {creditsExhausted ? (
@@ -272,12 +361,30 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
               >
                 Buy Credits
               </button>
+            ) : allFailed ? (
+              // Nothing was saved: retrying is the only useful next step.
+              <button
+                className="btn btn--primary"
+                onClick={retryFailed}
+                disabled={!canAfford(credits, creditCost)}
+              >
+                Retry failed
+              </button>
             ) : (
               <button
                 className="btn btn--primary"
                 onClick={() => chrome.tabs.create({ url: appUrl(APP.jobs, baseUrl) })}
               >
                 View in Dashboard
+              </button>
+            )}
+            {!creditsExhausted && !allFailed && errorCount > 0 && (
+              <button
+                className="btn btn--secondary"
+                onClick={retryFailed}
+                disabled={!canAfford(credits, creditCost)}
+              >
+                Retry failed
               </button>
             )}
             <button className="btn btn--secondary" onClick={handleReset}>Analyze More</button>
@@ -296,9 +403,21 @@ export default function BulkAnalyze({ onLogout, userName, credits, creditCost, r
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {authStrip}
-      <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
-        Analyzing {doneCount + errorCount + 1} of {items.length}…
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
+          {paused
+            ? `Paused after ${doneCount + errorCount} of ${items.length}`
+            : `Analyzing ${doneCount + errorCount + 1} of ${items.length}…`}
+        </p>
+        <button
+          className="btn btn--secondary"
+          style={{ fontSize: 11, padding: '4px 10px', flexShrink: 0 }}
+          onClick={togglePause}
+          aria-pressed={paused}
+        >
+          {paused ? '▶ Resume' : '⏸ Pause'}
+        </button>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {items.map(it => <ItemRow key={it.url} item={it} />)}
       </div>

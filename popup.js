@@ -48,7 +48,9 @@ function showView(name) {
 
 // /login is a web page on the app host, not an API route — using the API base
 // here sent users to https://api.zilvo.co/login, which 404s.
-const ZILVO_LOGIN_URL = appUrl(APP.login);
+// `from=extension` tells the web app to open the Company Analyze first-run page
+// after login instead of the all-products dashboard.
+const ZILVO_LOGIN_URL = `${appUrl(APP.login)}?from=extension`;
 
 /**
  * Point every [data-zilvo-link] anchor at the configured app host.
@@ -856,18 +858,44 @@ async function loadLists({ force = false } = {}) {
   $('lists-error').classList.add('hidden');
   $('lists-items').classList.add('hidden');
 
-  const data = await zilvoGet(API.extractionsForAnalysis);
+  // Fetch directly (not via zilvoGet) so the failure can say WHY: a expired
+  // session and a server error looked identical before.
+  let data = null;
+  let status = 0;
+  try {
+    const auth = await getStoredAuth();
+    if (!auth?.token) {
+      status = 401;
+    } else {
+      const res = await fetch(apiUrl(API.extractionsForAnalysis), {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      status = res.status;
+      if (res.ok) data = await res.json();
+    }
+  } catch (err) {
+    console.error('[Zilvo] lists fetch failed:', err);
+  }
   $('lists-loading').classList.add('hidden');
 
   if (!data) {
-    $('lists-error').textContent = 'Could not load your extractions. Check your connection and try again.';
+    $('lists-error').textContent = status === 401
+      ? 'Your Zilvo session has expired. Log in again, then refresh this list.'
+      : status
+        ? `Could not load your extractions (HTTP ${status}). Please try again in a moment.`
+        : 'Could not reach Zilvo. Check your connection and try again.';
     $('lists-error').classList.remove('hidden');
     return;
   }
 
   _lists = data.extractions || [];
   if (!_lists.length) {
-    $('lists-empty').classList.remove('hidden');
+    const empty = $('lists-empty');
+    // A lead-only account is NOT an error — explain the requirement instead.
+    empty.textContent = data.leadExtractions
+      ? `You have ${data.leadExtractions} lead extraction${data.leadExtractions === 1 ? '' : 's'}, but ICP analysis needs an ACCOUNT extraction. In the Zilvo LinkedIn Scraper, open Accounts and run Extract Accounts, then refresh here.`
+      : 'No extractions yet. Extract companies with the Zilvo LinkedIn Scraper (Accounts → Extract Accounts), then refresh here.';
+    empty.classList.remove('hidden');
     return;
   }
 

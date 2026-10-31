@@ -8,16 +8,19 @@ export declare const ZILVO_APP: string;
 export declare const API: {
   login: string; logout: string; me: string; credits: string;
   ledger: string; charge: string; pricing: string; analyze: string;
+  pauseJobs: string; resumeJobs: string;
   icp: string;
 };
 
 export declare const APP: {
   login: string; signup: string; forgotPassword: string; billing: string;
   companies: string; jobs: string; overview: string; icp: string;
+  analysisResult: string;
 };
 
 export declare function apiUrl(path: string): string;
 export declare function appUrl(path: string, base?: string): string;
+export declare function analysisResultUrl(jobId: string, base?: string): string;
 
 export declare const TOKEN_ORIGINS: string[];
 export declare const TOKEN_COOKIE_DOMAINS: string[];

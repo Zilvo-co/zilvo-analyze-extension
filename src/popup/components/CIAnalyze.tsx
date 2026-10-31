@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { extractLinkedInCompanyData } from '../../content/linkedin';
 import { getActionCost } from '../../utils/zilvoApi';
-import { ZILVO_APP_DEFAULT, APP, appUrl } from '../../config';
+import { ZILVO_APP_DEFAULT, APP, appUrl, analysisResultUrl } from '../../config';
 import type { CIBackgroundMessage, LinkedInCompanyData } from '../../types';
 
 const CI_ANALYZE_FALLBACK_COST = 5;
@@ -158,9 +158,13 @@ export default function CIAnalyze({ onLogout, userName }: Props) {
         <div className="error-actions">
           <button
             className="btn btn--primary"
-            onClick={() => chrome.tabs.create({ url: appUrl(APP.companies, state.baseUrl) })}
+            onClick={() => chrome.tabs.create({
+              url: state.jobId
+                ? analysisResultUrl(state.jobId, state.baseUrl)
+                : appUrl(APP.companies, state.baseUrl),
+            })}
           >
-            Open Dashboard
+            Open Result
           </button>
           <button className="btn btn--secondary" onClick={handleReset}>Analyze Another</button>
         </div>

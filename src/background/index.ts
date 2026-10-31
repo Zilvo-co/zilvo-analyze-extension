@@ -314,3 +314,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return true;
 });
+
+// ── Bulk batch pause / resume ────────────────────────────────────────────────
+// The popup runs a bulk batch one company at a time, so pausing there is mostly
+// client-side; this parks whatever is already queued on the server so the run
+// stops on both ends (and stays paused if the popup is closed and reopened).
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type !== 'PAUSE_CI_BATCH' && message.type !== 'RESUME_CI_BATCH') return;
+
+  const pausing = message.type === 'PAUSE_CI_BATCH';
+
+  (async () => {
+    const auth = await getZilvoAuth();
+    if (!auth) {
+      sendResponse({ ok: false, error: 'Not logged in to Zilvo.' });
+      return;
+    }
+    try {
+      await zilvoFetch(
+        pausing ? API.pauseJobs : API.resumeJobs,
+        { method: 'POST', body: JSON.stringify({ batchId: message.batchId }) },
+        auth.token
+      );
+      sendResponse({ ok: true });
+    } catch (err) {
+      sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  })();
+
+  return true;
+});

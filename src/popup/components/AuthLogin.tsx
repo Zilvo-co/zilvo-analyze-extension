@@ -27,7 +27,9 @@ export default function AuthLogin({ onLoggedIn }: Props) {
   const openSignIn = useCallback(async () => {
     setError('');
     try {
-      const url = appUrl(APP.login, await getZilvoAppUrl());
+      // `from=extension` makes the web app land on the Company Analyze first-run
+      // page after login — that is the tool this panel belongs to.
+      const url = `${appUrl(APP.login, await getZilvoAppUrl())}?from=extension`;
       chrome.tabs.create({ url }, () => {
         if (chrome.runtime.lastError) {
           setError('Could not open the Zilvo sign-in page. Try again.');

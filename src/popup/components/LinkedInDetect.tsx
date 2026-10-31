@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { extractLinkedInCompanyData } from '../../content/linkedin';
 import InsufficientCredits from './InsufficientCredits';
 import { canAfford } from '../../utils/credits';
-import { ZILVO_APP_DEFAULT, APP, appUrl } from '../../config';
+import { ZILVO_APP_DEFAULT, APP, appUrl, analysisResultUrl } from '../../config';
 import type { CIBackgroundMessage, CreditState, LinkedInCompanyData } from '../../types';
 
 interface Props extends CreditState {
@@ -18,7 +18,7 @@ type State =
   | { status: 'extracting' }
   | { status: 'ready'; liData: LinkedInCompanyData }
   | { status: 'loading'; step: string; message: string }
-  | { status: 'success'; baseUrl: string }
+  | { status: 'success'; baseUrl: string; jobId?: string }
   | { status: 'error'; error: string; code?: number; required?: number; remaining?: number };
 
 export default function LinkedInDetect({ onLogout, userName, credits, creditCost, refreshCredits, onBulk }: Props) {
@@ -64,7 +64,7 @@ export default function LinkedInDetect({ onLogout, userName, credits, creditCost
       if (message.type === 'CI_PROGRESS') {
         setState({ status: 'loading', step: message.step, message: message.message });
       } else if (message.type === 'CI_COMPLETE') {
-        setState({ status: 'success', baseUrl });
+        setState({ status: 'success', baseUrl, jobId: message.jobId });
         refreshCredits(); // credits were just spent — re-read the balance
       } else if (message.type === 'CI_ERROR') {
         setState({
@@ -165,9 +165,13 @@ export default function LinkedInDetect({ onLogout, userName, credits, creditCost
         <div className="error-actions">
           <button
             className="btn btn--primary"
-            onClick={() => chrome.tabs.create({ url: appUrl(APP.companies, state.baseUrl) })}
+            onClick={() => chrome.tabs.create({
+              url: state.jobId
+                ? analysisResultUrl(state.jobId, state.baseUrl)
+                : appUrl(APP.companies, state.baseUrl),
+            })}
           >
-            Open Dashboard
+            Open Result
           </button>
           <button className="btn btn--secondary" onClick={() => setState({ status: 'checking' })}>
             Analyze Another

@@ -58,6 +58,9 @@ export const API = {
   charge:  '/api/credits/charge',
   pricing: '/api/pricing',
   analyze: '/api/company-intelligence/analyze',
+  // Pause/resume a bulk batch SERVER-SIDE (queued rows are parked, not analysed).
+  pauseJobs:  '/api/company-intelligence/jobs/pause',
+  resumeJobs: '/api/company-intelligence/jobs/resume',
   // The user's saved positionings. `${API.icp}/${id}/default` sets the account
   // default — the same endpoint the web app's My ICP page uses.
   icp:     '/api/company-intelligence/icp',
@@ -79,6 +82,8 @@ export const APP = {
   forgotPassword: '/forgot-password',
   billing:        '/billing',
   companies:      '/tools/company-intelligence/companies',
+  // One company's analysis report. Needs ?jobId=… — see analysisResultUrl().
+  analysisResult: '/tools/company-intelligence/analyze/companies',
   // My ICP — where positionings are created. The popup links here when the
   // account has none yet, since an ICP can only be authored in the web app.
   icp:            '/tools/company-intelligence/icp',
@@ -98,6 +103,19 @@ export function apiUrl(path) {
  */
 export function appUrl(path, base = ZILVO_APP) {
   return `${String(base).replace(/\/+$/, '')}${path}`;
+}
+
+/**
+ * The report page for ONE analyzed company.
+ *
+ * "Open Dashboard" used to drop the user on the companies LIST (or, worse, the
+ * app home), so the analysis they had just paid for was nowhere in sight. The
+ * platform's report page is keyed by the job id the analyze API returns, so link
+ * straight to it and fall back to the list only when no id is known.
+ */
+export function analysisResultUrl(jobId, base = ZILVO_APP) {
+  const path = `${APP.analysisResult}?jobId=${encodeURIComponent(String(jobId))}`;
+  return appUrl(path, base);
 }
 
 /**
