@@ -44,3 +44,21 @@ export function bulkSummaryText({ queued = 0, done = 0, failed = 0, notSent = 0,
   if (notSent > 0) parts.push(`${notSent} not sent.`);
   return parts.join(' ');
 }
+
+/**
+ * Row outcome for one item of the bulk endpoint's `results` array
+ * ({ url, jobId?, status, error? }). SKIPPED out_of_credits is "Not sent"
+ * (retryable after a top-up); INVALID and other SKIPPED reasons are "Failed".
+ */
+export function bulkItemOutcome(item) {
+  if (!item || typeof item !== 'object') {
+    return { kind: 'failed', state: 'error', label: 'Failed', reason: 'The server returned no result for this URL.' };
+  }
+  const status = String(item.status || '').toUpperCase();
+  const error = typeof item.error === 'string' && item.error ? item.error : '';
+  if (status === 'SKIPPED' && error === 'out_of_credits') return { ...bulkNotSentOutcome(), reason: 'Out of credits. Top up to analyze the rest.' };
+  if (status === 'INVALID') return { kind: 'failed', state: 'error', label: 'Failed', reason: error || 'Invalid URL.' };
+  if (status === 'SKIPPED') return { kind: 'failed', state: 'error', label: 'Failed', reason: error || 'The server skipped this URL.' };
+  const base = bulkRowOutcome({ success: true, jobStatus: status });
+  return { ...base, reason: '', jobId: typeof item.jobId === 'string' ? item.jobId : undefined };
+}
