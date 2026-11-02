@@ -10,7 +10,7 @@
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
-import { bulkRowOutcome, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
+import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
 
@@ -1243,6 +1243,8 @@ let _bulkRunning      = false;
 let _bulkFailed  = [];
 let _bulkBatchId = null;
 let _bulkTotal   = 0;
+// Queued / already-done counts from earlier passes, so a retry adds to the summary instead of replacing it.
+let _bulkBase    = { queued: 0, done: 0 };
 let _bulkScope   = 'website';
 
 function initBulkTab() {
@@ -1563,12 +1565,23 @@ async function runBulkJobs(entries, token, source) {
   let sent = 0;
   let queued = 0;
   let done = 0;
+  let notSent = 0;
+  let outOfCredits = false;
 
   $('bulk-progress-fill').style.width  = '0%';
   $('bulk-progress-label').textContent = bulkProgressText(0, entries.length, 0);
 
   for (const entry of entries) {
     const { job, itemEl } = entry;
+    // Once the account is out of credits every further request 402s too, so
+    // stop sending. These rows were never sent, so they are not "Failed".
+    if (outOfCredits) {
+      const skipped = bulkNotSentOutcome();
+      setBulkRowState(itemEl, skipped.state, skipped.label);
+      notSent++;
+      failed.push(entry); // stays retryable after a top-up
+      continue;
+    }
     clearBulkRowReason(itemEl);
     setBulkRowState(itemEl, 'active', 'Analyzing…');
     itemEl.scrollIntoView({ block: 'nearest' });
@@ -1593,6 +1606,7 @@ async function runBulkJobs(entries, token, source) {
 
     sent++;
     const outcome = bulkRowOutcome(result);
+    if (isOutOfCredits(result)) outOfCredits = true;
     if (outcome.kind === 'done') done++;
     else if (outcome.kind === 'queued') queued++;
     $('bulk-progress-fill').style.width  = `${Math.round((sent / entries.length) * 100)}%`;
@@ -1616,13 +1630,22 @@ async function runBulkJobs(entries, token, source) {
   }
 
   _bulkFailed = failed;
+  _bulkBase = { queued: _bulkBase.queued + queued, done: _bulkBase.done + done };
   setBulkBusy(false, source);
 
-  // Say plainly that queued rows are not finished yet.
-  $('bulk-progress-label').textContent = bulkSummaryText({ queued, done, failed: failed.length });
+  // Say plainly that queued rows are not finished yet. Totals are cumulative
+  // across retry passes; failed / not sent describe what is still outstanding.
+  $('bulk-progress-label').textContent = bulkSummaryText({
+    queued: _bulkBase.queued,
+    done: _bulkBase.done,
+    failed: failed.length - notSent,
+    notSent,
+    outOfCredits,
+  });
 
   // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
-  $('bulk-dashboard-link').href = appUrl(APP.jobs);
+  // ?batchId= is read by the website's jobs page (useSearchParams) and filters to this upload.
+  $('bulk-dashboard-link').href = `${appUrl(APP.jobs)}?batchId=${encodeURIComponent(_bulkBatchId)}`;
   $('bulk-dashboard-link').classList.remove('hidden');
 }
 
@@ -1642,6 +1665,7 @@ async function handleBulkAnalyze(scope = 'website') {
   _bulkBatchId = `bulk-${Date.now().toString(36)}`;
   _bulkTotal   = jobs.length;
   _bulkFailed  = [];
+  _bulkBase    = { queued: 0, done: 0 };
 
   mountBulkProgress(scope);
   $('bulk-progress-card').classList.remove('hidden');

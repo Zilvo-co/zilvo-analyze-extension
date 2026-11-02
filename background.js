@@ -759,7 +759,7 @@ async function callZilvoAnalyze({
   try {
     const data = JSON.parse(raw);
     // Keep the job status: the server usually only QUEUES the analysis.
-    return { success: true, jobId: data.jobId, status: data.status, creditsRemaining: data.creditsRemaining };
+    return { success: true, jobId: data.jobId, jobStatus: data.status, creditsRemaining: data.creditsRemaining };
   } catch {
     console.error('[Zilvo] analyze returned 2xx with an unreadable body:', raw.slice(0, 1000) || '(empty)');
     return { success: false, error: `Server returned an unreadable response (HTTP ${res.status}).`, status: res.status };
