@@ -9,7 +9,7 @@
 
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
-import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
+import { API, APP, apiUrl, appUrl, analysisResultUrl } from './helpers/constants.js';
 import { homeBatchNote, isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
@@ -66,6 +66,25 @@ function applyZilvoLinks() {
   for (const el of document.querySelectorAll('[data-zilvo-link]')) {
     const path = APP[el.dataset.zilvoLink];
     if (path) el.href = appUrl(path);
+  }
+}
+
+/**
+ * Aim a result card's "open in Zilvo" link at THIS analysis' report page when
+ * its job id is known, else at the overview (e.g. after a failure). Dropping
+ * data-zilvo-link keeps applyZilvoLinks() from rewriting it back.
+ */
+function setResultLink(anchorId, jobId) {
+  const a = $(anchorId);
+  if (!a) return;
+  if (jobId) {
+    delete a.dataset.zilvoLink;
+    a.href = analysisResultUrl(jobId);
+    a.textContent = 'View result in Zilvo →';
+  } else {
+    a.dataset.zilvoLink = 'overview';
+    a.href = appUrl(APP.overview);
+    a.textContent = 'Open Zilvo Dashboard →';
   }
 }
 
@@ -520,7 +539,7 @@ async function runLiAnalyze(attempt, source) {
   if (result.success) {
     _lastLiAttempt = null;
     updateCreditsDisplay(result.creditsRemaining);
-    showLiResult('success', 'Analysis started! View results in your Zilvo Dashboard.');
+    showLiResult('success', 'Analysis started! View results in your Zilvo Dashboard.', result.jobId);
     // Update button label
     if ($('li-analyze-btn')) $('li-analyze-text').textContent = 'Re-analyze';
   } else {
@@ -576,7 +595,8 @@ function setLiAnalyzeState(on, source = 'main') {
   $('li-retry-spinner').style.display   = retryBusy ? 'inline-block' : 'none';
 }
 
-function showLiResult(type, text) {
+function showLiResult(type, text, jobId) {
+  setResultLink('li-result-link', type === 'success' ? jobId : null);
   const card = $('li-result-card');
   const msg  = $('li-result-msg');
   card.classList.remove('hidden');
@@ -689,7 +709,7 @@ async function runWebAnalyze(attempt, source) {
   if (result.success) {
     _lastWebAttempt = null;
     updateCreditsDisplay(result.creditsRemaining);
-    showWebResult('success', 'Analysis started! View results in your Zilvo Dashboard.');
+    showWebResult('success', 'Analysis started! View results in your Zilvo Dashboard.', result.jobId);
   } else {
     showWebResult('error', analyzeErrorText(result));
   }
@@ -711,7 +731,8 @@ function setWebAnalyzeState(on, source = 'main') {
   $('web-retry-spinner').style.display    = retryBusy ? 'inline-block' : 'none';
 }
 
-function showWebResult(type, text) {
+function showWebResult(type, text, jobId) {
+  setResultLink('web-result-link', type === 'success' ? jobId : null);
   const card = $('web-result-card');
   const msg  = $('web-result-msg');
   card.classList.remove('hidden');

@@ -13,6 +13,7 @@ export {
   APP,
   apiUrl,
   appUrl,
+  analysisResultUrl,
   TOKEN_ORIGINS,
   TOKEN_COOKIE_DOMAINS,
 } from '../shared/zilvo-urls.js';
