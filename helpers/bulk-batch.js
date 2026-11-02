@@ -5,7 +5,7 @@
  * format the website uses, mapping the endpoint's results into rows, and the
  * progress text from GET /jobs/batches counts.
  */
-import { bulkItemOutcome } from './bulk-status.js';
+import { bulkItemOutcome, bulkNotSentOutcome } from './bulk-status.js';
 
 /** Server cap per POST /analyze/bulk request. */
 export const BULK_MAX_URLS = 1000;
@@ -16,8 +16,17 @@ export function makeBulkBatchId(fileName, total, now = Date.now()) {
   return `bulk|${encodeURIComponent(name)}|${total}|${now.toString(36)}`;
 }
 
-/** Split a list into chunks of at most `size` (default: the server cap). */
-export function chunkUrls(urls, size = BULK_MAX_URLS) {
+/**
+ * Urls per request. Well under the server cap so one request finishes in far
+ * less than the MV3 service worker's lifetime; progress is saved per chunk.
+ */
+export const BULK_CHUNK_SIZE = 200;
+
+/** A 'sending' phase with no chunk started for this long is treated as a dead worker. */
+export const BULK_STALE_MS = 2 * 60 * 1000;
+
+/** Split a list into chunks of at most `size` (default BULK_CHUNK_SIZE). */
+export function chunkUrls(urls, size = BULK_CHUNK_SIZE) {
   const out = [];
   for (let i = 0; i < urls.length; i += size) out.push(urls.slice(i, i + size));
   return out;
@@ -59,10 +68,35 @@ export function batchCounts(batch, expected = 0) {
   return { total: Math.max(n(b.total), expected), completed, failed, running, paused, done: completed + failed };
 }
 
-/** Finished: nothing running or paused and every accepted job has a row. */
-export function isBatchFinished(counts, expected) {
-  if (expected <= 0) return true;
-  return counts.running === 0 && counts.paused === 0 && counts.total >= expected && counts.done >= expected;
+/**
+ * Finished: nothing running or paused in jobs/batches. A batch missing from
+ * jobs/batches after a successful poll (e.g. every url was a cache hit) is
+ * finished too, judged from the send-time results. Call only after a successful poll.
+ */
+export function isBatchFinished(counts, found = true) {
+  if (!found) return true;
+  return counts.running === 0 && counts.paused === 0;
+}
+
+/** True when a 'sending' batch has had no chunk activity for BULK_STALE_MS. */
+export function isSendingStale(active, now = Date.now()) {
+  if (!active || active.phase !== 'sending') return false;
+  const last = active.chunkStartedAt || active.sentAt || active.startedAt || 0;
+  return now - last > BULK_STALE_MS;
+}
+
+/**
+ * A dead worker left rows in 'sending'. Mark them "Not sent" (retryable; the
+ * server is idempotent per batchId+url) and move the batch on.
+ * Returns { active, rows, finished }.
+ */
+export function reconcileStale(active, rows) {
+  const next = rows.map(r => (r.kind === 'sending'
+    ? { url: r.url, ...bulkNotSentOutcome(), reason: 'Sending was interrupted. Retry to send these.' }
+    : r));
+  const expected = expectedJobs(next);
+  const finished = expected === 0;
+  return { active: { ...active, expected, phase: finished ? 'finished' : 'tracking' }, rows: next, finished };
 }
 
 /** "3 of 10 done · 5 queued · 1 failed"; "Paused · ..." while parked. */

@@ -59,6 +59,8 @@ export function bulkItemOutcome(item) {
   if (status === 'SKIPPED' && error === 'out_of_credits') return { ...bulkNotSentOutcome(), reason: 'Out of credits. Top up to analyze the rest.' };
   if (status === 'INVALID') return { kind: 'failed', state: 'error', label: 'Failed', reason: error || 'Invalid URL.' };
   if (status === 'SKIPPED') return { kind: 'failed', state: 'error', label: 'Failed', reason: error || 'The server skipped this URL.' };
+  if (status === 'FAILED') return { kind: 'failed', state: 'error', label: 'Failed', reason: error || 'The analysis failed.' };
+  // QUEUED, COMPLETED, PROCESSING, PAUSED and any unknown status map here; never throws.
   const base = bulkRowOutcome({ success: true, jobStatus: status });
   return { ...base, reason: '', jobId: typeof item.jobId === 'string' ? item.jobId : undefined };
 }

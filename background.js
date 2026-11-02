@@ -16,7 +16,7 @@ import { sleep, normalizeLinkedInUrl, isRetryableError } from './helpers/utils.j
 import { API, apiUrl, ZILVO_APP } from './helpers/constants.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits } from './helpers/bulk-status.js';
-import { makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs } from './helpers/bulk-batch.js';
+import { isSendingStale, reconcileStale, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs } from './helpers/bulk-batch.js';
 
 // Open the side panel (right-side panel) when the toolbar icon is clicked.
 // Falls back silently in environments where the sidePanel API isn't available.
@@ -710,7 +710,12 @@ async function startBulkWebsite({ urls, fileName, token, retry }) {
   if (!token) return { success: false, error: 'Not signed in.' };
   const stored = await chrome.storage.local.get([BULK_ACTIVE_KEY, BULK_ROWS_KEY, BULK_LAST_KEY]);
   if (stored[BULK_ACTIVE_KEY]?.phase === 'sending') {
-    return { success: false, error: 'A bulk upload is already being sent.' };
+    if (!isSendingStale(stored[BULK_ACTIVE_KEY])) return { success: false, error: 'A bulk upload is already being sent.' };
+    // The worker died mid-send: free the unsent rows ("Not sent", retryable) and go on.
+    const fixed = reconcileStale(stored[BULK_ACTIVE_KEY], stored[BULK_ROWS_KEY] || []);
+    stored[BULK_ROWS_KEY] = fixed.rows;
+    stored[BULK_ACTIVE_KEY] = fixed.active;
+    if (fixed.finished) { stored[BULK_LAST_KEY] = { ...fixed.active, finishedAt: Date.now() }; stored[BULK_ACTIVE_KEY] = undefined; }
   }
 
   let active;
@@ -722,11 +727,11 @@ async function startBulkWebsite({ urls, fileName, token, retry }) {
     if (!active || !Array.isArray(rows)) return { success: false, error: 'Nothing to retry.' };
     targets = rows.map((r, i) => (r.kind === 'failed' || r.kind === 'notSent' ? i : -1)).filter(i => i >= 0);
     if (!targets.length) return { success: false, error: 'Nothing to retry.' };
-    active = { ...active, phase: 'sending' };
+    active = { ...active, phase: 'sending', sentAt: Date.now() };
   } else {
     if (!Array.isArray(urls) || !urls.length) return { success: false, error: 'No URLs to send.' };
     const name = String(fileName || '').trim() || 'upload.csv';
-    active = { batchId: makeBulkBatchId(name, urls.length), fileName: name, total: urls.length, startedAt: Date.now(), phase: 'sending', expected: 0 };
+    active = { batchId: makeBulkBatchId(name, urls.length), fileName: name, total: urls.length, startedAt: Date.now(), sentAt: Date.now(), phase: 'sending', expected: 0 };
     rows = urls.map(url => ({ url, kind: 'sending', state: 'active', label: 'Sending…', reason: '' }));
     targets = rows.map((_, i) => i);
   }
@@ -758,11 +763,16 @@ async function postBulkChunk(token, body) {
 async function runBulkWebsite(active, rows, targets, token) {
   const { zilvoIcpId: icpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
   const save = () => chrome.storage.local.set({ [BULK_ROWS_KEY]: rows, [BULK_ACTIVE_KEY]: active });
+  // "New upload" in the popup removes the active record: stop writing if so.
+  const stillActive = async () => (await chrome.storage.local.get(BULK_ACTIVE_KEY))[BULK_ACTIVE_KEY]?.batchId === active.batchId;
   let legacy = false;
   let outOfCredits = false;
   let credits = null;
 
   for (const chunk of chunkUrls(targets)) {
+    if (!(await stillActive())) return;
+    active.chunkStartedAt = Date.now();
+    await save(); // stamp: a popup can tell a live send from a dead worker
     const urls = chunk.map(i => rows[i].url);
     let mapped = null;
 
@@ -795,11 +805,13 @@ async function runBulkWebsite(active, rows, targets, token) {
       }
     }
 
+    if (!(await stillActive())) return;
     chunk.forEach((rowIndex, k) => { rows[rowIndex] = mapped[k]; });
     await save();
   }
 
   if (credits != null) await updateStoredCredits(credits);
+  if (!(await stillActive())) return;
   active.expected = expectedJobs(rows);
   if (active.expected === 0) {
     // Nothing was accepted, so there is no batch to follow: finish straight away.

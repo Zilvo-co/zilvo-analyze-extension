@@ -10,7 +10,7 @@
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
-import { BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
+import { isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
@@ -1287,7 +1287,9 @@ function initBulkTab() {
     $('bulk-batch-note').classList.add('hidden');
     $('bulk-pause-btn').classList.add('hidden');
     _batchRowsSig = '';
-    chrome.storage.local.remove([BULK_LAST_KEY, BULK_ROWS_KEY]);
+    stopBatchPoll();
+    _batchCounts = null;
+    chrome.storage.local.remove([BULK_ACTIVE_KEY, BULK_LAST_KEY, BULK_ROWS_KEY]);
     clearBulkCsv(scope);
     focusBulkRun(scope, false);
   });
@@ -1747,6 +1749,17 @@ function stopBatchPoll() {
 async function renderWebBatch() {
   if (_bulkRunning) return; // a LinkedIn per-row run owns the card
   const stored = await chrome.storage.local.get([BULK_ACTIVE_KEY, BULK_ROWS_KEY, BULK_LAST_KEY]);
+  if (isSendingStale(stored[BULK_ACTIVE_KEY])) {
+    // The background worker died mid-send. Mark unsent rows "Not sent" (retryable) and carry on.
+    const fixed = reconcileStale(stored[BULK_ACTIVE_KEY], stored[BULK_ROWS_KEY] || []);
+    if (fixed.finished) {
+      await chrome.storage.local.set({ [BULK_ROWS_KEY]: fixed.rows, [BULK_LAST_KEY]: { ...fixed.active, finishedAt: Date.now() } });
+      await chrome.storage.local.remove(BULK_ACTIVE_KEY);
+    } else {
+      await chrome.storage.local.set({ [BULK_ROWS_KEY]: fixed.rows, [BULK_ACTIVE_KEY]: fixed.active });
+    }
+    return; // the storage listener re-renders
+  }
   const batch = stored[BULK_ACTIVE_KEY] || stored[BULK_LAST_KEY];
   const rows = Array.isArray(stored[BULK_ROWS_KEY]) ? stored[BULK_ROWS_KEY] : [];
   if (!batch) { _webBatchShown = false; stopBatchPoll(); return; }
@@ -1782,7 +1795,8 @@ async function renderWebBatch() {
   const retryable = rows.filter(r => r.kind === 'failed' || r.kind === 'notSent').length;
   const notSent = rows.filter(r => r.kind === 'notSent').length;
 
-  $('bulk-new-btn').classList.toggle('hidden', !finished);
+  // Always available: stops tracking here only, never cancels server jobs.
+  $('bulk-new-btn').classList.remove('hidden');
   $('bulk-retry-text').textContent = `Retry failed (${retryable})`;
   $('bulk-retry-btn').classList.toggle('hidden', sending || retryable === 0);
   $('bulk-retry-spinner').style.display = 'none';
@@ -1847,10 +1861,11 @@ async function pollBatch() {
     batches = await res.json();
   } catch { return; }
 
-  const counts = batchCounts(findBatch(batches, active.batchId), active.expected);
+  const found = findBatch(batches, active.batchId);
+  const counts = batchCounts(found, active.expected);
   _batchCounts = counts;
   paintBatchCounts(counts);
-  const finishing = isBatchFinished(counts, active.expected);
+  const finishing = isBatchFinished(counts, !!found);
   // Row badges: heavier call (every job of the batch), so throttled; always once at finish.
   if (finishing || Date.now() - _lastRowsFetch >= BULK_ROWS_POLL_MS) await refreshRowBadges(auth.token, active.batchId);
   if (finishing) {
