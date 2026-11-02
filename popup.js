@@ -10,6 +10,7 @@
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
+import { bulkRowOutcome, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
 
@@ -1263,7 +1264,7 @@ function initBulkTab() {
     $('bulk-progress-card').classList.add('hidden');
     $('bulk-results-list').innerHTML = '';
     $('bulk-progress-fill').style.width = '0%';
-    $('bulk-progress-label').textContent = '0 / 0 completed';
+    $('bulk-progress-label').textContent = '';
     _bulkTotal = 0;
     clearBulkCsv(scope);
     focusBulkRun(scope, false);
@@ -1559,10 +1560,12 @@ function setBulkBusy(on, source) {
  */
 async function runBulkJobs(entries, token, source) {
   const failed = [];
+  let sent = 0;
+  let queued = 0;
   let done = 0;
 
   $('bulk-progress-fill').style.width  = '0%';
-  $('bulk-progress-label').textContent = `0 / ${entries.length} completed`;
+  $('bulk-progress-label').textContent = bulkProgressText(0, entries.length, 0);
 
   for (const entry of entries) {
     const { job, itemEl } = entry;
@@ -1588,18 +1591,21 @@ async function runBulkJobs(entries, token, source) {
           batchId:       _bulkBatchId,
         });
 
-    done++;
-    $('bulk-progress-fill').style.width  = `${Math.round((done / entries.length) * 100)}%`;
-    $('bulk-progress-label').textContent = `${done} / ${entries.length} completed`;
+    sent++;
+    const outcome = bulkRowOutcome(result);
+    if (outcome.kind === 'done') done++;
+    else if (outcome.kind === 'queued') queued++;
+    $('bulk-progress-fill').style.width  = `${Math.round((sent / entries.length) * 100)}%`;
+    $('bulk-progress-label').textContent = bulkProgressText(sent, entries.length, done);
 
-    if (result.success) {
-      setBulkRowState(itemEl, 'done', 'Done');
+    if (outcome.kind !== 'failed') {
+      setBulkRowState(itemEl, outcome.state, outcome.label);
       if (result.creditsRemaining != null) updateCreditsDisplay(result.creditsRemaining);
     } else {
-      setBulkRowState(itemEl, 'error', 'Error');
+      setBulkRowState(itemEl, outcome.state, outcome.label);
       // The reason used to live only in the row's `title`, so it was invisible
       // unless you hovered. Put it on a second line under the URL.
-      const reason = analyzeErrorText(result);
+      const reason = result.success ? 'The server could not analyze this company.' : analyzeErrorText(result);
       const reasonEl = document.createElement('span');
       reasonEl.className  = 'bulk-item-reason';
       reasonEl.textContent = reason;
@@ -1611,6 +1617,9 @@ async function runBulkJobs(entries, token, source) {
 
   _bulkFailed = failed;
   setBulkBusy(false, source);
+
+  // Say plainly that queued rows are not finished yet.
+  $('bulk-progress-label').textContent = bulkSummaryText({ queued, done, failed: failed.length });
 
   // Set the dashboard link to point directly to the jobs page so they can download the CSV batch
   $('bulk-dashboard-link').href = appUrl(APP.jobs);

@@ -1,0 +1,31 @@
+/**
+ * helpers/bulk-status.js
+ *
+ * Pure status -> label mapping for Bulk Analyze. The server analyses
+ * asynchronously: POST /analyze usually returns QUEUED, and only a cache hit
+ * comes back COMPLETED. A successful request therefore means "sent", not "done".
+ */
+
+/** Map an API job status (or a failed request) to a row state + badge label. */
+export function bulkRowOutcome(result) {
+  if (!result || !result.success) return { kind: 'failed', state: 'error', label: 'Failed' };
+  const status = String(result.status || '').toUpperCase();
+  if (status === 'COMPLETED') return { kind: 'done', state: 'done', label: 'Done' };
+  if (status === 'FAILED') return { kind: 'failed', state: 'error', label: 'Failed' };
+  // QUEUED, PROCESSING, PAUSED, or a missing/unknown status: accepted, not finished.
+  return { kind: 'queued', state: 'queued', label: 'Queued' };
+}
+
+/** Progress line while sending, e.g. "3 / 10 sent · 1 done". */
+export function bulkProgressText(sent, total, done) {
+  return `${sent} / ${total} sent · ${done} done`;
+}
+
+/** Final summary, e.g. "120 queued, analysis continues in the cloud. 3 already done. 2 failed." */
+export function bulkSummaryText({ queued = 0, done = 0, failed = 0 }) {
+  const parts = [];
+  if (queued > 0) parts.push(`${queued} queued, analysis continues in the cloud.`);
+  if (done > 0) parts.push(`${done} already done.`);
+  if (failed > 0) parts.push(`${failed} failed.`);
+  return parts.join(' ');
+}

@@ -921,6 +921,7 @@ body.auth-locked #icp-bar { display: none !important; }
 .bulk-dot-pending { background: var(--color-border); }
 .bulk-dot-active  { background: var(--color-accent); animation: pulse 1.1s ease-in-out infinite; }
 .bulk-dot-done    { background: var(--color-success); }
+.bulk-dot-queued  { background: var(--color-accent); }
 .bulk-dot-error   { background: var(--color-error); }
 
 .bulk-item-url {
@@ -942,6 +943,7 @@ body.auth-locked #icp-bar { display: none !important; }
 }
 .bulk-badge-pending { color: var(--color-muted);   background: rgba(123,132,158,0.1); }
 .bulk-badge-active  { color: var(--color-accent);  background: rgba(47,150,184,0.12); }
+.bulk-badge-queued  { color: var(--color-accent);  background: rgba(47,150,184,0.12); }
 .bulk-badge-done    { color: var(--color-success);  background: rgba(31,143,107,0.12); }
 .bulk-badge-error   { color: var(--color-error);    background: rgba(217,58,58,0.1); }
 
