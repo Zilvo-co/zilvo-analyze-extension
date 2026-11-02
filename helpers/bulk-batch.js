@@ -90,13 +90,15 @@ export function isSendingStale(active, now = Date.now()) {
  * server is idempotent per batchId+url) and move the batch on.
  * Returns { active, rows, finished }.
  */
-export function reconcileStale(active, rows) {
+export function reconcileStale(active, rows, now = Date.now()) {
   const next = rows.map(r => (r.kind === 'sending'
     ? { url: r.url, ...bulkNotSentOutcome(), reason: 'Sending was interrupted. Retry to send these.' }
     : r));
   const expected = expectedJobs(next);
   const finished = expected === 0;
-  return { active: { ...active, expected, phase: finished ? 'finished' : 'tracking' }, rows: next, finished };
+  // reconciledAt is a generation marker: a slow-but-alive send loop that sees a
+  // different value than it started with must stop writing.
+  return { active: { ...active, expected, reconciledAt: now, phase: finished ? 'finished' : 'tracking' }, rows: next, finished };
 }
 
 /** "3 of 10 done · 5 queued · 1 failed"; "Paused · ..." while parked. */
@@ -145,4 +147,13 @@ export function applyJobStatuses(rows, jobs) {
     return { ...r, ...patch };
   });
   return { rows: next, changed };
+}
+
+/** Home-card line for a running batch, or '' when there is nothing in progress. */
+export function homeBatchNote(active, counts) {
+  if (!active) return '';
+  if (active.phase === 'sending') return `Sending ${active.total} ${active.total === 1 ? 'website' : 'websites'}`;
+  if (active.phase !== 'tracking') return '';
+  const c = counts || { completed: 0, total: active.expected || active.total || 0 };
+  return `Batch in progress: ${c.completed} of ${c.total} done`;
 }

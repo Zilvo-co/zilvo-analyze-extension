@@ -762,9 +762,20 @@ async function postBulkChunk(token, body) {
 
 async function runBulkWebsite(active, rows, targets, token) {
   const { zilvoIcpId: icpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
-  const save = () => chrome.storage.local.set({ [BULK_ROWS_KEY]: rows, [BULK_ACTIVE_KEY]: active });
-  // "New upload" in the popup removes the active record: stop writing if so.
-  const stillActive = async () => (await chrome.storage.local.get(BULK_ACTIVE_KEY))[BULK_ACTIVE_KEY]?.batchId === active.batchId;
+  // Generation this loop started under. A popup stale-reconcile (reconciledAt) or
+  // "New upload" (record removed / new batchId) invalidates it, and a stale loop
+  // must never write. Read-compare-write: storage has no CAS, so the check sits
+  // as close to the write as possible.
+  const gen = active.reconciledAt ?? 0;
+  const stillActive = async () => {
+    const cur = (await chrome.storage.local.get(BULK_ACTIVE_KEY))[BULK_ACTIVE_KEY];
+    return !!cur && cur.batchId === active.batchId && (cur.reconciledAt ?? 0) === gen;
+  };
+  const save = async () => {
+    if (!(await stillActive())) return false;
+    await chrome.storage.local.set({ [BULK_ROWS_KEY]: rows, [BULK_ACTIVE_KEY]: active });
+    return true;
+  };
   let legacy = false;
   let outOfCredits = false;
   let credits = null;
@@ -772,7 +783,7 @@ async function runBulkWebsite(active, rows, targets, token) {
   for (const chunk of chunkUrls(targets)) {
     if (!(await stillActive())) return;
     active.chunkStartedAt = Date.now();
-    await save(); // stamp: a popup can tell a live send from a dead worker
+    if (!(await save())) return; // stamp: a popup can tell a live send from a dead worker
     const urls = chunk.map(i => rows[i].url);
     let mapped = null;
 
@@ -805,15 +816,15 @@ async function runBulkWebsite(active, rows, targets, token) {
       }
     }
 
-    if (!(await stillActive())) return;
     chunk.forEach((rowIndex, k) => { rows[rowIndex] = mapped[k]; });
-    await save();
+    if (!(await save())) return;
   }
 
   if (credits != null) await updateStoredCredits(credits);
   if (!(await stillActive())) return;
   active.expected = expectedJobs(rows);
   if (active.expected === 0) {
+    if (!(await stillActive())) return;
     // Nothing was accepted, so there is no batch to follow: finish straight away.
     await chrome.storage.local.set({ [BULK_LAST_KEY]: { ...active, phase: 'finished', finishedAt: Date.now() }, [BULK_ROWS_KEY]: rows });
     await chrome.storage.local.remove(BULK_ACTIVE_KEY);

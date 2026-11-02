@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isSendingStale, reconcileStale, applyJobStatuses, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from '../helpers/bulk-batch.js';
+import { homeBatchNote, isSendingStale, reconcileStale, applyJobStatuses, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from '../helpers/bulk-batch.js';
 import { bulkItemOutcome } from '../helpers/bulk-status.js';
 
 test('batch id uses website format and encodes the file name', () => {
@@ -98,4 +98,13 @@ test('applyJobStatuses refreshes badges by jobId', () => {
   assert.equal(rows[0].label, 'Queued');
   assert.equal(applyJobStatuses(out, jobs).changed, false);
   assert.equal(applyJobStatuses(rows, null).changed, false);
+});
+
+test('home batch note and reconcile generation marker', () => {
+  assert.equal(homeBatchNote({ phase: 'tracking', total: 9 }, { completed: 3, total: 9 }), 'Batch in progress: 3 of 9 done');
+  assert.equal(homeBatchNote({ phase: 'tracking', expected: 5, total: 9 }, null), 'Batch in progress: 0 of 5 done');
+  assert.equal(homeBatchNote({ phase: 'sending', total: 1 }, null), 'Sending 1 website');
+  assert.equal(homeBatchNote({ phase: 'finished' }, null), '');
+  assert.equal(homeBatchNote(null, null), '');
+  assert.equal(reconcileStale({ phase: 'sending' }, [], 777).active.reconciledAt, 777);
 });

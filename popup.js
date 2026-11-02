@@ -10,7 +10,7 @@
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
-import { isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
+import { homeBatchNote, isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
@@ -1258,6 +1258,7 @@ let _batchPoll = null;
 let _batchCounts = null;
 let _batchRowsSig = '';
 let _lastRowsFetch = 0;
+let _batchAutoOpened = false;
 
 function initBulkTab() {
   $('li-csv-input').addEventListener('change',  e => handleCsvUpload(e, 'linkedin'));
@@ -1762,7 +1763,16 @@ async function renderWebBatch() {
   }
   const batch = stored[BULK_ACTIVE_KEY] || stored[BULK_LAST_KEY];
   const rows = Array.isArray(stored[BULK_ROWS_KEY]) ? stored[BULK_ROWS_KEY] : [];
+  setHomeBatchNote(stored[BULK_ACTIVE_KEY], _batchCounts);
   if (!batch) { _webBatchShown = false; stopBatchPoll(); return; }
+
+  // First paint after opening the popup: land on the website view so a running
+  // batch (or an undismissed summary) is on screen. Never yank the user from
+  // another view, and only once per popup open.
+  if (!_batchAutoOpened) {
+    _batchAutoOpened = true;
+    if (_activeTab === 'home') showView('website');
+  }
 
   _webBatchShown = true;
   _bulkScope = 'website';
@@ -1840,7 +1850,16 @@ async function renderWebBatch() {
   }
 }
 
+function setHomeBatchNote(active, counts) {
+  const el = $('home-batch-note');
+  if (!el) return;
+  const text = homeBatchNote(active, counts);
+  el.textContent = text;
+  el.classList.toggle('hidden', !text);
+}
+
 function paintBatchCounts(c) {
+  chrome.storage.local.get(BULK_ACTIVE_KEY).then(r => setHomeBatchNote(r[BULK_ACTIVE_KEY], c));
   $('bulk-progress-label').textContent = batchProgressLine(c);
   $('bulk-progress-fill').style.width = `${batchPercent(c)}%`;
   const btn = $('bulk-pause-btn');
