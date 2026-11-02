@@ -11,6 +11,7 @@ import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl, analysisResultUrl } from './helpers/constants.js';
 import { homeBatchNote, isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
+import { createRunGate, unsentIndexes } from './helpers/run-gate.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
@@ -1165,6 +1166,83 @@ async function handleListAnalyze() {
 }
 
 /**
+ * Pause/resume for a popup-driven per-row run (extracted list, LinkedIn CSV).
+ *
+ * Pause does two things: the loop stops sending rows (the gate), and the rows of
+ * this batch ALREADY queued on the server are parked via /jobs/pause (the
+ * per-row requests carry `batchId`, which the server stores). Rows not yet sent
+ * are not charged. Resume un-parks the server rows first, then lets the loop
+ * continue from the same index, so no row is ever sent twice.
+ */
+let _run = null; // { gate, btn, batchId, token, sent, rowCount, paintPaused, paintResumed, onNote }
+
+async function postBatchAction(path, run) {
+  try {
+    const res = await fetch(apiUrl(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${run.token}` },
+      body: JSON.stringify({ batchId: run.batchId }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('[Zilvo] pause/resume failed:', err);
+    return false;
+  }
+}
+
+function paintRunPauseBtn(run) {
+  const paused = run.gate.isPaused();
+  run.btn.textContent = paused ? 'Resume' : 'Pause';
+  run.btn.setAttribute('aria-pressed', String(paused));
+  run.btn.dataset.mode = paused ? 'resume' : 'pause';
+}
+
+function beginRunPause(opts) {
+  _run = { gate: createRunGate(), ...opts };
+  paintRunPauseBtn(_run);
+  _run.btn.disabled = false;
+  _run.btn.classList.remove('hidden');
+  return _run;
+}
+
+function endRunPause() {
+  if (!_run) return;
+  _run.btn.classList.add('hidden');
+  _run = null;
+}
+
+/** Click handler for the run's Pause/Resume button. */
+async function toggleRunPause() {
+  const run = _run;
+  if (!run || run.btn.disabled) return;
+  run.btn.disabled = true;
+  if (run.gate.isPaused()) {
+    if (await postBatchAction(API.resumeJobs, run)) {
+      run.paintResumed();
+      run.gate.resume();
+      run.onNote('');
+    } else {
+      run.onNote('Could not resume on Zilvo. Try again.');
+    }
+  } else {
+    run.gate.pause(); // stop sending first, so no further row goes out meanwhile
+    run.paintPaused(unsentIndexes(run.sent));
+    const ok = await postBatchAction(API.pauseJobs, run);
+    run.onNote(ok ? '' : 'Paused here, but Zilvo could not pause the rows already queued. Press Resume, then Pause again.');
+  }
+  paintRunPauseBtn(run);
+  run.btn.disabled = false;
+}
+
+/**
+ * After a row returns while paused, re-pause the batch: that row may have been
+ * enqueued just AFTER the pause request landed, and would otherwise run anyway.
+ */
+async function repauseIfNeeded() {
+  if (_run?.gate.isPaused()) await postBatchAction(API.pauseJobs, _run);
+}
+
+/**
  * Run one company at a time through the existing per-company pipeline.
  *
  * Sequential on purpose: each job opens a LinkedIn tab and a website tab, and
@@ -1203,7 +1281,16 @@ async function runListJobs(companies, token, projectId) {
   $('lists-progress-fill').style.width = '0%';
   $('lists-progress-label').textContent = `0 / ${companies.length} companies`;
 
-  for (const row of rows) {
+  const sent = rows.map(() => false);
+  const run = beginRunPause({
+    btn: $('lists-pause-btn'), batchId: _listsBatchId, token, sent,
+    paintPaused: (idx) => idx.forEach(i => setRow(rows[i], 'pending', 'Paused')),
+    paintResumed: () => rows.forEach((r, i) => { if (!sent[i]) setRow(r, 'pending', 'Queued'); }),
+    onNote: (t) => { $('lists-pause-note').textContent = t; },
+  });
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     // Once the account is out of credits every further dispatch 402s too —
     // stop instead of marching the rest of the list into "Failed".
     if (outOfCredits) {
@@ -1211,6 +1298,8 @@ async function runListJobs(companies, token, projectId) {
       continue;
     }
 
+    await run.gate.waitIfPaused();
+    sent[i] = true;
     setRow(row, 'active', 'Analyzing…');
 
     const result = await requestAnalyze({
@@ -1228,6 +1317,7 @@ async function runListJobs(companies, token, projectId) {
       },
     });
 
+    await repauseIfNeeded();
     if (result?.status === 402) outOfCredits = true;
     setRow(
       row,
@@ -1245,6 +1335,7 @@ async function runListJobs(companies, token, projectId) {
     }
   }
 
+  endRunPause();
   $('lists-progress-label').textContent = outOfCredits
     ? `${done} / ${companies.length} dispatched — stopped: not enough credits. Top up on Zilvo and retry.`
     : `${done} / ${companies.length} companies queued — analysis continues in the cloud.`;
@@ -1294,6 +1385,7 @@ function initBulkTab() {
   $('bulk-run-btn').addEventListener('click',    () => handleBulkAnalyze('website'));
   $('bulk-retry-btn').addEventListener('click', handleBulkRetry);
   $('bulk-pause-btn').addEventListener('click', toggleBatchPause);
+  $('lists-pause-btn').addEventListener('click', toggleRunPause);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes[BULK_ACTIVE_KEY] || changes[BULK_ROWS_KEY] || changes[BULK_LAST_KEY])) renderWebBatch();
   });

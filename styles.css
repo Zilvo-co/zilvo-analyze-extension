@@ -1679,3 +1679,6 @@ body.auth-locked .app-accent { display: none !important; }
   .page-title { font-size: 22px; }
   .page-footer { display: none; }
 }
+
+/* Pause/resume buttons: keep a >=44px touch target (the base .btn is shorter). */
+#lists-pause-btn, #bulk-pause-btn { min-height: 44px; }
