@@ -10,6 +10,7 @@
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
+import { BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
@@ -1247,6 +1248,15 @@ let _bulkTotal   = 0;
 // Queued / already-done counts from earlier passes, so a retry adds to the summary instead of replacing it.
 let _bulkBase    = { queued: 0, done: 0 };
 let _bulkScope   = 'website';
+let _bulkWebFileName = '';
+
+// Website bulk state lives in chrome.storage.local (written by background.js).
+const BULK_ACTIVE_KEY = 'zilvoBulkActive';
+const BULK_ROWS_KEY   = 'zilvoBulkRows';
+const BULK_LAST_KEY   = 'zilvoBulkLast';
+let _batchPoll = null;
+let _batchCounts = null;
+let _batchRowsSig = '';
 
 function initBulkTab() {
   $('li-csv-input').addEventListener('change',  e => handleCsvUpload(e, 'linkedin'));
@@ -1260,6 +1270,10 @@ function initBulkTab() {
   $('li-bulk-run-btn').addEventListener('click', () => handleBulkAnalyze('linkedin'));
   $('bulk-run-btn').addEventListener('click',    () => handleBulkAnalyze('website'));
   $('bulk-retry-btn').addEventListener('click', handleBulkRetry);
+  $('bulk-pause-btn').addEventListener('click', toggleBatchPause);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes[BULK_ACTIVE_KEY] || changes[BULK_ROWS_KEY] || changes[BULK_LAST_KEY])) renderWebBatch();
+  });
 
   // Finish a run and go back to the setup form for the next CSV.
   $('bulk-new-btn').addEventListener('click', () => {
@@ -1269,6 +1283,10 @@ function initBulkTab() {
     $('bulk-progress-fill').style.width = '0%';
     $('bulk-progress-label').textContent = '';
     _bulkTotal = 0;
+    $('bulk-batch-note').classList.add('hidden');
+    $('bulk-pause-btn').classList.add('hidden');
+    _batchRowsSig = '';
+    chrome.storage.local.remove([BULK_LAST_KEY, BULK_ROWS_KEY]);
     clearBulkCsv(scope);
     focusBulkRun(scope, false);
   });
@@ -1400,7 +1418,7 @@ function handleCsvUpload(e, type) {
       : allUrls.filter(u => u.startsWith('http'));
 
     if (isLinkedIn) _bulkLinkedInUrls = valid;
-    else            _bulkWebsiteUrls  = valid;
+    else { _bulkWebsiteUrls = valid; _bulkWebFileName = file.name || ''; }
 
     // URLs were found but none survived validation — say so instead of leaving
     // an empty preview and a hidden Analyze button to explain themselves.
@@ -1662,6 +1680,16 @@ async function handleBulkAnalyze(scope = 'website') {
   const jobs = sourceUrls.map(url => ({ type: scope, url }));
   if (!jobs.length) return;
 
+  if (scope === 'website') {
+    // One request, sent by the background worker: closing the popup cannot drop rows.
+    const res = await requestAnalyze({ action: 'START_BULK_WEBSITE', urls: sourceUrls, fileName: _bulkWebFileName, token: auth.token });
+    if (!res.success) { $('web-csv-error').textContent = analyzeErrorText(res); return; }
+    _bulkScope = 'website';
+    $('bulk-batch-note').classList.add('hidden');
+    await renderWebBatch();
+    return;
+  }
+
   _bulkScope   = scope;
   _bulkBatchId = `bulk-${Date.now().toString(36)}`;
   _bulkTotal   = jobs.length;
@@ -1691,14 +1719,161 @@ async function handleBulkAnalyze(scope = 'website') {
  * CSV stays one batch on the dashboard and its export is not split in two.
  */
 async function handleBulkRetry() {
-  if (_bulkRunning || !_bulkFailed.length) return;
-
   const auth = await getStoredAuth();
   if (!auth?.token) { syncAuthOverlay(); return; }
+
+  if (_bulkScope === 'website' && _webBatchShown) {
+    const res = await requestAnalyze({ action: 'START_BULK_WEBSITE', retry: true, token: auth.token });
+    if (!res.success) $('bulk-progress-label').textContent = analyzeErrorText(res);
+    return;
+  }
+  if (_bulkRunning || !_bulkFailed.length) return;
 
   const entries = _bulkFailed;
   setBulkBusy(true, 'retry');
   await runBulkJobs(entries, auth.token, 'retry');
+}
+
+// ─── Website bulk: follow the batch the background worker is running ─────────
+
+let _webBatchShown = false;
+
+function stopBatchPoll() {
+  if (_batchPoll) { clearInterval(_batchPoll); _batchPoll = null; }
+}
+
+/** Paint the website batch (active or last finished) from storage. */
+async function renderWebBatch() {
+  if (_bulkRunning) return; // a LinkedIn per-row run owns the card
+  const stored = await chrome.storage.local.get([BULK_ACTIVE_KEY, BULK_ROWS_KEY, BULK_LAST_KEY]);
+  const batch = stored[BULK_ACTIVE_KEY] || stored[BULK_LAST_KEY];
+  const rows = Array.isArray(stored[BULK_ROWS_KEY]) ? stored[BULK_ROWS_KEY] : [];
+  if (!batch) { _webBatchShown = false; stopBatchPoll(); return; }
+
+  _webBatchShown = true;
+  _bulkScope = 'website';
+  mountBulkProgress('website');
+  $('bulk-progress-card').classList.remove('hidden');
+  focusBulkRun('website', true);
+
+  // Rows only change when background saves them; polling must not rebuild 1000 <li>s.
+  const sig = rows.map(r => r.kind).join(',') + '|' + rows.length;
+  if (sig !== _batchRowsSig) {
+    _batchRowsSig = sig;
+    const listEl = $('bulk-results-list');
+    listEl.replaceChildren();
+    for (const r of rows) {
+      const li = makeBulkRow({ url: r.url });
+      setBulkRowState(li, r.state || 'pending', r.label || 'Pending');
+      if (r.reason && r.kind !== 'queued') {
+        const reasonEl = document.createElement('span');
+        reasonEl.className = 'bulk-item-reason';
+        reasonEl.textContent = r.reason;
+        li.appendChild(reasonEl);
+        li.title = r.reason;
+      }
+      listEl.appendChild(li);
+    }
+  }
+
+  const sending = batch.phase === 'sending';
+  const finished = !sending && !stored[BULK_ACTIVE_KEY];
+  const retryable = rows.filter(r => r.kind === 'failed' || r.kind === 'notSent').length;
+  const notSent = rows.filter(r => r.kind === 'notSent').length;
+
+  $('bulk-new-btn').classList.toggle('hidden', !finished);
+  $('bulk-retry-text').textContent = `Retry failed (${retryable})`;
+  $('bulk-retry-btn').classList.toggle('hidden', sending || retryable === 0);
+  $('bulk-retry-spinner').style.display = 'none';
+  const link = $('bulk-dashboard-link');
+  link.href = `${appUrl(APP.jobs)}?batchId=${encodeURIComponent(batch.batchId)}`;
+  link.classList.toggle('hidden', sending);
+
+  const note = $('bulk-batch-note');
+  if (sending) {
+    const left = rows.filter(r => r.kind === 'sending').length;
+    $('bulk-progress-label').textContent = `Sending ${batch.total} ${batch.total === 1 ? 'website' : 'websites'}…`;
+    $('bulk-progress-fill').style.width = `${Math.round(((rows.length - left) / Math.max(1, rows.length)) * 100)}%`;
+    note.classList.add('hidden');
+    $('bulk-pause-btn').classList.add('hidden');
+    stopBatchPoll();
+    return;
+  }
+
+  const queued = rows.filter(r => r.kind === 'queued').length;
+  const failedRows = rows.filter(r => r.kind === 'failed').length;
+  const noteParts = [];
+  if (queued > 0) noteParts.push(`${queued} queued, analysis continues in the cloud.`);
+  if (failedRows > 0) noteParts.push(`${failedRows} failed.`);
+  if (notSent > 0) noteParts.push(`${notSent} not sent.`);
+  note.textContent = noteParts.join(' ');
+  note.classList.toggle('hidden', noteParts.length === 0);
+
+  if (finished) {
+    stopBatchPoll();
+    const c = batch.counts || batchCounts(null, batch.expected);
+    $('bulk-progress-label').textContent = batch.expected > 0 ? batchProgressLine(c) : 'Nothing was sent.';
+    $('bulk-progress-fill').style.width = `${batchPercent(c)}%`;
+    $('bulk-pause-btn').classList.add('hidden');
+    return;
+  }
+
+  if (_batchCounts) paintBatchCounts(_batchCounts);
+  if (!_batchPoll) {
+    pollBatch();
+    _batchPoll = setInterval(pollBatch, BULK_POLL_MS);
+  }
+}
+
+function paintBatchCounts(c) {
+  $('bulk-progress-label').textContent = batchProgressLine(c);
+  $('bulk-progress-fill').style.width = `${batchPercent(c)}%`;
+  const btn = $('bulk-pause-btn');
+  const paused = c.paused > 0;
+  btn.textContent = paused ? 'Resume' : 'Pause';
+  btn.dataset.mode = paused ? 'resume' : 'pause';
+  btn.classList.toggle('hidden', !paused && c.running === 0);
+}
+
+async function pollBatch() {
+  const auth = await getStoredAuth();
+  const { [BULK_ACTIVE_KEY]: active } = await chrome.storage.local.get(BULK_ACTIVE_KEY);
+  if (!auth?.token || !active || active.phase !== 'tracking') return;
+  let batches;
+  try {
+    const res = await fetch(apiUrl(API.jobBatches), { headers: { Authorization: `Bearer ${auth.token}` } });
+    if (!res.ok) return; // keep the last numbers; try again next tick
+    batches = await res.json();
+  } catch { return; }
+
+  const counts = batchCounts(findBatch(batches, active.batchId), active.expected);
+  _batchCounts = counts;
+  paintBatchCounts(counts);
+  if (isBatchFinished(counts, active.expected)) {
+    stopBatchPoll();
+    await chrome.storage.local.set({ [BULK_LAST_KEY]: { ...active, phase: 'finished', counts, finishedAt: Date.now() } });
+    await chrome.storage.local.remove(BULK_ACTIVE_KEY); // storage listener re-renders
+  }
+}
+
+async function toggleBatchPause() {
+  const btn = $('bulk-pause-btn');
+  const auth = await getStoredAuth();
+  const { [BULK_ACTIVE_KEY]: active } = await chrome.storage.local.get(BULK_ACTIVE_KEY);
+  if (!auth?.token || !active || btn.disabled) return;
+  const path = btn.dataset.mode === 'resume' ? API.resumeJobs : API.pauseJobs;
+  btn.disabled = true;
+  try {
+    await fetch(apiUrl(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+      body: JSON.stringify({ batchId: active.batchId }),
+    });
+  } catch (err) {
+    console.error('[Zilvo] pause/resume failed:', err);
+  }
+  btn.disabled = false;
+  await pollBatch();
 }
 
 // ─── Auto-detect on tab navigation ───────────────────────────────────────────
@@ -1736,4 +1911,5 @@ function initTabWatcher() {
   initBulkTab();
   initTabWatcher();
   await initAuth();
+  await renderWebBatch();
 })();
