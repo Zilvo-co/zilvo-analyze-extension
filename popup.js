@@ -1207,6 +1207,7 @@ function beginRunPause(opts) {
 
 function endRunPause() {
   if (!_run) return;
+  _run.onNote('');
   _run.btn.classList.add('hidden');
   _run = null;
 }
@@ -1707,7 +1708,16 @@ async function runBulkJobs(entries, token, source) {
   $('bulk-progress-fill').style.width  = '0%';
   $('bulk-progress-label').textContent = bulkProgressText(0, entries.length, 0);
 
-  for (const entry of entries) {
+  const sentFlags = entries.map(() => false);
+  const run = beginRunPause({
+    btn: $('bulk-pause-btn'), batchId: _bulkBatchId, token, sent: sentFlags,
+    paintPaused: (idx) => idx.forEach(i => setBulkRowState(entries[i].itemEl, 'pending', 'Paused')),
+    paintResumed: () => entries.forEach((e, i) => { if (!sentFlags[i]) setBulkRowState(e.itemEl, 'pending', 'Pending'); }),
+    onNote: (t) => { $('bulk-batch-note').textContent = t; $('bulk-batch-note').classList.toggle('hidden', !t); },
+  });
+
+  for (let idx = 0; idx < entries.length; idx++) {
+    const entry = entries[idx];
     const { job, itemEl } = entry;
     // Once the account is out of credits every further request 402s too, so
     // stop sending. These rows were never sent, so they are not "Failed".
@@ -1718,6 +1728,8 @@ async function runBulkJobs(entries, token, source) {
       failed.push(entry); // stays retryable after a top-up
       continue;
     }
+    await run.gate.waitIfPaused();
+    sentFlags[idx] = true;
     clearBulkRowReason(itemEl);
     setBulkRowState(itemEl, 'active', 'Analyzing…');
     itemEl.scrollIntoView({ block: 'nearest' });
@@ -1741,6 +1753,7 @@ async function runBulkJobs(entries, token, source) {
         });
 
     sent++;
+    await repauseIfNeeded();
     const outcome = bulkRowOutcome(result);
     if (isOutOfCredits(result)) outOfCredits = true;
     if (outcome.kind === 'done') done++;
@@ -1765,6 +1778,7 @@ async function runBulkJobs(entries, token, source) {
     }
   }
 
+  endRunPause();
   _bulkFailed = failed;
   _bulkBase = { queued: _bulkBase.queued + queued, done: _bulkBase.done + done };
   setBulkBusy(false, source);
@@ -2025,6 +2039,8 @@ async function refreshRowBadges(token, batchId) {
 }
 
 async function toggleBatchPause() {
+  // A popup-driven CSV run owns this button: pause its loop, not a server batch.
+  if (_run?.btn === $('bulk-pause-btn')) return toggleRunPause();
   const btn = $('bulk-pause-btn');
   const auth = await getStoredAuth();
   const { [BULK_ACTIVE_KEY]: active } = await chrome.storage.local.get(BULK_ACTIVE_KEY);
