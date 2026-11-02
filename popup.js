@@ -552,6 +552,7 @@ async function requestAnalyze(message) {
 
 /** Failure text for the UI: the reason, plus the HTTP status when there is one. */
 function analyzeErrorText(result) {
+  if (isOutOfCredits(result)) return 'Out of credits. Top up to analyze the rest.';
   const reason = result?.error || 'Analysis failed. Please try again.';
   return result?.status ? `${reason} (HTTP ${result.status})` : reason;
 }
