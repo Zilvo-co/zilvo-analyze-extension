@@ -61,6 +61,8 @@ export const API = {
   // One request for a whole website list (<= 1000 urls), and per-batch counts.
   analyzeBulk: '/api/company-intelligence/analyze/bulk',
   jobBatches:  '/api/company-intelligence/jobs/batches',
+  // `?batchId=<id>` lists every job (rows) of one batch.
+  jobList:     '/api/company-intelligence/jobs',
   // Pause/resume a bulk batch SERVER-SIDE (queued rows are parked, not analysed).
   pauseJobs:  '/api/company-intelligence/jobs/pause',
   resumeJobs: '/api/company-intelligence/jobs/resume',

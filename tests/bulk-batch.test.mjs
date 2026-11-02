@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from '../helpers/bulk-batch.js';
+import { applyJobStatuses, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from '../helpers/bulk-batch.js';
 import { bulkItemOutcome } from '../helpers/bulk-status.js';
 
 test('batch id uses website format and encodes the file name', () => {
@@ -52,4 +52,27 @@ test('batch not yet visible is not finished; nothing accepted is finished', () =
   assert.equal(findBatch([], 'x'), null);
   assert.equal(isBatchFinished(batchCounts(null, 5), 5), false);
   assert.equal(isBatchFinished(batchCounts(null, 0), 0), true);
+});
+
+test('applyJobStatuses refreshes badges by jobId', () => {
+  const rows = [
+    { url: 'a', kind: 'queued', state: 'queued', label: 'Queued', reason: '', jobId: '1' },
+    { url: 'b', kind: 'queued', state: 'queued', label: 'Queued', reason: '', jobId: '2' },
+    { url: 'c', kind: 'queued', state: 'queued', label: 'Queued', reason: '', jobId: '3' },
+    { url: 'd', kind: 'queued', state: 'queued', label: 'Queued', reason: '', jobId: '4' },
+    { url: 'e', kind: 'failed', state: 'error', label: 'Failed', reason: 'bad' },
+  ];
+  const jobs = [
+    { _id: '1', status: 'COMPLETED' },
+    { _id: '2', status: 'FAILED', error: 'timeout' },
+    { _id: '3', status: 'PAUSED' },
+    { _id: '4', status: 'PROCESSING' },
+  ];
+  const { rows: out, changed } = applyJobStatuses(rows, jobs);
+  assert.equal(changed, true);
+  assert.deepEqual(out.map(r => r.label), ['Done', 'Failed', 'Paused', 'Queued', 'Failed']);
+  assert.equal(out[1].reason, 'timeout');
+  assert.equal(rows[0].label, 'Queued');
+  assert.equal(applyJobStatuses(out, jobs).changed, false);
+  assert.equal(applyJobStatuses(rows, null).changed, false);
 });

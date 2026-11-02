@@ -37,7 +37,7 @@ export function failRows(urls, reason) {
 /** Distinct accepted jobs in the rows; the server mirrors in-file duplicates onto one job. */
 export function expectedJobs(rows) {
   const ids = new Set();
-  for (const r of rows) if (r.jobId && (r.kind === 'queued' || r.kind === 'done')) ids.add(r.jobId);
+  for (const r of rows) if (r.jobId) ids.add(r.jobId);
   return ids.size;
 }
 
@@ -82,3 +82,33 @@ export function batchPercent(counts) {
 }
 
 export const BULK_POLL_MS = 5000;
+
+/** Poll rows (jobs list) at most this often; counts poll stays at BULK_POLL_MS. */
+export const BULK_ROWS_POLL_MS = 15000;
+
+/**
+ * Refresh row badges from GET /jobs?batchId= (matched by jobId = job._id).
+ * COMPLETED -> Done, FAILED -> Failed (+ job.error), PAUSED -> Paused,
+ * QUEUED/PROCESSING -> Queued. Rows without a jobId are left alone.
+ * Returns { rows, changed }; never mutates the input.
+ */
+export function applyJobStatuses(rows, jobs) {
+  const byId = new Map();
+  for (const j of Array.isArray(jobs) ? jobs : []) if (j && j._id != null) byId.set(String(j._id), j);
+  let changed = false;
+  const next = rows.map(r => {
+    const job = r.jobId ? byId.get(r.jobId) : null;
+    if (!job) return r;
+    const status = String(job.status || '').toUpperCase();
+    let patch;
+    if (status === 'COMPLETED') patch = { kind: 'done', state: 'done', label: 'Done', reason: '' };
+    else if (status === 'FAILED') patch = { kind: 'failed', state: 'error', label: 'Failed', reason: typeof job.error === 'string' && job.error ? job.error : 'The analysis failed.' };
+    else if (status === 'PAUSED') patch = { kind: 'queued', state: 'queued', label: 'Paused', reason: '' };
+    else if (status === 'QUEUED' || status === 'PROCESSING') patch = { kind: 'queued', state: 'queued', label: 'Queued', reason: '' };
+    else return r;
+    if (patch.kind === r.kind && patch.label === r.label && patch.reason === (r.reason || '')) return r;
+    changed = true;
+    return { ...r, ...patch };
+  });
+  return { rows: next, changed };
+}

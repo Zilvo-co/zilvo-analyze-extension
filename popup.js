@@ -10,7 +10,7 @@
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl } from './helpers/constants.js';
-import { BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
+import { BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
 const $ = id => document.getElementById(id);
@@ -1257,6 +1257,7 @@ const BULK_LAST_KEY   = 'zilvoBulkLast';
 let _batchPoll = null;
 let _batchCounts = null;
 let _batchRowsSig = '';
+let _lastRowsFetch = 0;
 
 function initBulkTab() {
   $('li-csv-input').addEventListener('change',  e => handleCsvUpload(e, 'linkedin'));
@@ -1757,7 +1758,7 @@ async function renderWebBatch() {
   focusBulkRun('website', true);
 
   // Rows only change when background saves them; polling must not rebuild 1000 <li>s.
-  const sig = rows.map(r => r.kind).join(',') + '|' + rows.length;
+  const sig = rows.map(r => r.kind + r.label).join(',') + '|' + rows.length;
   if (sig !== _batchRowsSig) {
     _batchRowsSig = sig;
     const listEl = $('bulk-results-list');
@@ -1849,10 +1850,30 @@ async function pollBatch() {
   const counts = batchCounts(findBatch(batches, active.batchId), active.expected);
   _batchCounts = counts;
   paintBatchCounts(counts);
-  if (isBatchFinished(counts, active.expected)) {
+  const finishing = isBatchFinished(counts, active.expected);
+  // Row badges: heavier call (every job of the batch), so throttled; always once at finish.
+  if (finishing || Date.now() - _lastRowsFetch >= BULK_ROWS_POLL_MS) await refreshRowBadges(auth.token, active.batchId);
+  if (finishing) {
     stopBatchPoll();
     await chrome.storage.local.set({ [BULK_LAST_KEY]: { ...active, phase: 'finished', counts, finishedAt: Date.now() } });
     await chrome.storage.local.remove(BULK_ACTIVE_KEY); // storage listener re-renders
+  }
+}
+
+async function refreshRowBadges(token, batchId) {
+  _lastRowsFetch = Date.now();
+  try {
+    const res = await fetch(`${apiUrl(API.jobList)}?batchId=${encodeURIComponent(batchId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const jobs = await res.json();
+    const { [BULK_ROWS_KEY]: rows } = await chrome.storage.local.get(BULK_ROWS_KEY);
+    if (!Array.isArray(rows)) return;
+    const next = applyJobStatuses(rows, jobs);
+    if (next.changed) await chrome.storage.local.set({ [BULK_ROWS_KEY]: next.rows });
+  } catch (err) {
+    console.warn('[Zilvo] row refresh failed:', err);
   }
 }
 
