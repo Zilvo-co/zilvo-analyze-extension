@@ -58,6 +58,9 @@ export const API = {
   charge:  '/api/credits/charge',
   pricing: '/api/pricing',
   analyze: '/api/company-intelligence/analyze',
+  // One request for a whole website list (<= 1000 urls), and per-batch counts.
+  analyzeBulk: '/api/company-intelligence/analyze/bulk',
+  jobBatches:  '/api/company-intelligence/jobs/batches',
   // Pause/resume a bulk batch SERVER-SIDE (queued rows are parked, not analysed).
   pauseJobs:  '/api/company-intelligence/jobs/pause',
   resumeJobs: '/api/company-intelligence/jobs/resume',

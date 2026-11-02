@@ -15,6 +15,8 @@
 import { sleep, normalizeLinkedInUrl, isRetryableError } from './helpers/utils.js';
 import { API, apiUrl, ZILVO_APP } from './helpers/constants.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
+import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits } from './helpers/bulk-status.js';
+import { makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs } from './helpers/bulk-batch.js';
 
 // Open the side panel (right-side panel) when the toolbar icon is clicked.
 // Falls back silently in environments where the sidePanel API isn't available.
@@ -185,6 +187,11 @@ async function routeMessage(message, sender, sendResponse) {
 
       case 'ANALYZE_WEBSITE':
         sendResponse(await analyzeWebsiteUrl(message.websiteUrl, message.linkedinUrl, message.token, message.tabId, message.userInputField, message.batchId));
+        break;
+
+      // Website CSV bulk: runs here so closing the popup cannot drop rows.
+      case 'START_BULK_WEBSITE':
+        sendResponse(await startBulkWebsite(message));
         break;
 
       // ── Web-app auth sync (content_zilvo.js) ─────────────────────────────
@@ -688,6 +695,120 @@ async function analyzeWebsiteUrl(websiteUrl, linkedinUrl, token, tabId, userInpu
   }
 
   return callZilvoAnalyze({ token, websiteUrl, linkedinUrl: linkedinUrl || undefined, pageContent, userInputField: userInputField || websiteUrl, batchId });
+}
+
+// ─── Website bulk (single request per <=1000 urls) ───────────────────────────
+// State lives in chrome.storage.local so the popup can close and reopen:
+//   zilvoBulkActive  { batchId, fileName, total, startedAt, phase, expected }
+//   zilvoBulkRows    [{ url, kind, state, label, reason, jobId }]
+//   zilvoBulkLast    the finished batch's active record (kept until "New upload")
+const BULK_ACTIVE_KEY = 'zilvoBulkActive';
+const BULK_ROWS_KEY   = 'zilvoBulkRows';
+const BULK_LAST_KEY   = 'zilvoBulkLast';
+
+async function startBulkWebsite({ urls, fileName, token, retry }) {
+  if (!token) return { success: false, error: 'Not signed in.' };
+  const stored = await chrome.storage.local.get([BULK_ACTIVE_KEY, BULK_ROWS_KEY, BULK_LAST_KEY]);
+  if (stored[BULK_ACTIVE_KEY]?.phase === 'sending') {
+    return { success: false, error: 'A bulk upload is already being sent.' };
+  }
+
+  let active;
+  let rows;
+  let targets; // indices into rows to send
+  if (retry) {
+    active = stored[BULK_ACTIVE_KEY] || stored[BULK_LAST_KEY];
+    rows = stored[BULK_ROWS_KEY];
+    if (!active || !Array.isArray(rows)) return { success: false, error: 'Nothing to retry.' };
+    targets = rows.map((r, i) => (r.kind === 'failed' || r.kind === 'notSent' ? i : -1)).filter(i => i >= 0);
+    if (!targets.length) return { success: false, error: 'Nothing to retry.' };
+    active = { ...active, phase: 'sending' };
+  } else {
+    if (!Array.isArray(urls) || !urls.length) return { success: false, error: 'No URLs to send.' };
+    const name = String(fileName || '').trim() || 'upload.csv';
+    active = { batchId: makeBulkBatchId(name, urls.length), fileName: name, total: urls.length, startedAt: Date.now(), phase: 'sending', expected: 0 };
+    rows = urls.map(url => ({ url, kind: 'sending', state: 'active', label: 'Sending…', reason: '' }));
+    targets = rows.map((_, i) => i);
+  }
+  for (const i of targets) rows[i] = { url: rows[i].url, kind: 'sending', state: 'active', label: 'Sending…', reason: '' };
+  await chrome.storage.local.remove(BULK_LAST_KEY);
+  await chrome.storage.local.set({ [BULK_ACTIVE_KEY]: active, [BULK_ROWS_KEY]: rows });
+
+  // Deliberately not awaited: the popup gets its answer now and follows along via storage.
+  runBulkWebsite(active, rows, targets, token).catch(err => console.error('[Zilvo] bulk run failed:', err));
+  return { success: true, batchId: active.batchId };
+}
+
+async function postBulkChunk(token, body) {
+  try {
+    const res = await fetch(apiUrl(API.analyzeBulk), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const raw = await res.text().catch(() => '');
+    if (!res.ok) return { ok: false, status: res.status, error: extractApiError(raw, res.status) };
+    try { return { ok: true, data: JSON.parse(raw) }; }
+    catch { return { ok: false, status: res.status, error: `Server returned an unreadable response (HTTP ${res.status}).` }; }
+  } catch (err) {
+    return { ok: false, status: 0, error: `Cannot reach Zilvo server: ${err.message}` };
+  }
+}
+
+async function runBulkWebsite(active, rows, targets, token) {
+  const { zilvoIcpId: icpId } = await chrome.storage.local.get({ zilvoIcpId: '' });
+  const save = () => chrome.storage.local.set({ [BULK_ROWS_KEY]: rows, [BULK_ACTIVE_KEY]: active });
+  let legacy = false;
+  let outOfCredits = false;
+  let credits = null;
+
+  for (const chunk of chunkUrls(targets)) {
+    const urls = chunk.map(i => rows[i].url);
+    let mapped = null;
+
+    if (!legacy) {
+      const r = await postBulkChunk(token, {
+        urls, batchId: active.batchId, fileName: active.fileName, icpId: icpId || undefined,
+      });
+      if (r.ok) {
+        mapped = mapBulkResults(urls, r.data?.results);
+        if (r.data?.creditsRemaining != null) credits = r.data.creditsRemaining;
+      } else if (r.status === 404) {
+        legacy = true; // older platform without the bulk endpoint
+      } else {
+        mapped = failRows(urls, r.status ? `${r.error} (HTTP ${r.status})` : r.error);
+      }
+    }
+
+    if (legacy) {
+      mapped = [];
+      for (const url of urls) {
+        if (outOfCredits) { mapped.push({ url, ...bulkNotSentOutcome(), reason: 'Out of credits. Top up to analyze the rest.' }); continue; }
+        const res = await analyzeWebsiteUrl(url, null, token, null, url, active.batchId);
+        if (isOutOfCredits(res)) outOfCredits = true;
+        const o = bulkRowOutcome(res);
+        mapped.push({
+          url, ...o, jobId: res.jobId,
+          reason: o.kind === 'failed' ? (res.error || 'The server could not analyze this company.') : '',
+        });
+        if (res.creditsRemaining != null) credits = res.creditsRemaining;
+      }
+    }
+
+    chunk.forEach((rowIndex, k) => { rows[rowIndex] = mapped[k]; });
+    await save();
+  }
+
+  if (credits != null) await updateStoredCredits(credits);
+  active.expected = expectedJobs(rows);
+  if (active.expected === 0) {
+    // Nothing was accepted, so there is no batch to follow: finish straight away.
+    await chrome.storage.local.set({ [BULK_LAST_KEY]: { ...active, phase: 'finished', finishedAt: Date.now() }, [BULK_ROWS_KEY]: rows });
+    await chrome.storage.local.remove(BULK_ACTIVE_KEY);
+    return;
+  }
+  active.phase = 'tracking';
+  await save();
 }
 
 async function callZilvoAnalyze({
