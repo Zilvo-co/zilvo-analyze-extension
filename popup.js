@@ -11,6 +11,7 @@ import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { API, APP, apiUrl, appUrl, analysisResultUrl } from './helpers/constants.js';
 import { homeBatchNote, isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
+import { listCountsText, skippedLeadsNote } from './helpers/list-counts.js';
 import { createRunGate, unsentIndexes } from './helpers/run-gate.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits, bulkProgressText, bulkSummaryText } from './helpers/bulk-status.js';
 
@@ -916,10 +917,7 @@ async function loadLists({ force = false } = {}) {
   _lists = data.extractions || [];
   if (!_lists.length) {
     const empty = $('lists-empty');
-    // A lead-only account is NOT an error — explain the requirement instead.
-    empty.textContent = data.leadExtractions
-      ? `You have ${data.leadExtractions} lead extraction${data.leadExtractions === 1 ? '' : 's'}, but ICP analysis needs an ACCOUNT extraction. In the Zilvo LinkedIn Scraper, open Accounts and run Extract Accounts, then refresh here.`
-      : 'No extractions yet. Extract companies with the Zilvo LinkedIn Scraper (Accounts → Extract Accounts), then refresh here.';
+    empty.textContent = 'No extractions yet. Extract leads or accounts with the Zilvo LinkedIn Scraper, then refresh here.';
     empty.classList.remove('hidden');
     return;
   }
@@ -944,11 +942,7 @@ function renderLists() {
 
     const meta = document.createElement('span');
     meta.className = 'lists-item-meta';
-    // An account extraction has no people — every row is a company, so showing
-    // "0 leads" would be noise.
-    const counts = list.type === 'accounts'
-      ? `${list.companies.toLocaleString()} companies`
-      : `${list.leads.toLocaleString()} leads · ${list.companies.toLocaleString()} companies`;
+    const counts = listCountsText(list);
     meta.appendChild(
       document.createTextNode(
         `${counts} · ` +
@@ -998,9 +992,10 @@ async function selectList(list) {
   $('lists-rerun-note').classList.toggle('hidden', !list.analysis?.started);
 
   $('lists-sel-name').textContent = list.name;
-  $('lists-sel-counts').textContent = list.type === 'accounts'
-    ? `${list.companies.toLocaleString()} companies`
-    : `${list.leads.toLocaleString()} leads · ${list.companies.toLocaleString()} unique companies`;
+  const skippedNote = skippedLeadsNote(list);
+  $('lists-sel-counts').textContent = skippedNote
+    ? `${listCountsText(list)} · ${skippedNote}`
+    : listCountsText(list);
 
   await loadProjects();
 }

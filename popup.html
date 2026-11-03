@@ -174,7 +174,7 @@
             </span>
             <span class="home-card-body">
               <span class="home-card-title">Analyze an extracted list</span>
-              <span class="home-card-sub">Score every company in an account extraction &mdash; no CSV export needed.</span>
+              <span class="home-card-sub">Score every company in an extracted list &mdash; no CSV export needed.</span>
             </span>
             <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -215,18 +215,18 @@
       <div class="main page-main">
         <div class="page-head">
           <h1 class="page-title">Analyze an extracted list</h1>
-          <p class="page-sub">Score every company in an account extraction against your ICP.</p>
+          <p class="page-sub">Score every company in an extracted list against your ICP.</p>
         </div>
 
-        <!-- Step 1 — pick a list (account extractions only — an account list
-             is a complete set of companies, so every row can be scored) -->
+        <!-- Step 1 — pick a list (account or lead extraction; a lead list is
+             analyzed through the distinct companies that have a LinkedIn page) -->
         <div class="card" id="lists-picker-card">
-          <div class="section-label">Your account extractions</div>
-          <p class="hint">Analyze the companies in an account list you already extracted — no CSV export needed.</p>
+          <div class="section-label">Your extractions</div>
+          <p class="hint">Analyze the companies in a lead or account list you already extracted — no CSV export needed.</p>
 
           <div id="lists-loading" class="empty-note">Loading your extractions…</div>
           <div id="lists-empty" class="empty-note hidden">
-            No account extractions yet. Extract accounts with the Zilvo LinkedIn Extractor first — ICP analysis runs on account lists.
+            No extractions yet. Extract leads or accounts with the Zilvo LinkedIn Extractor first.
           </div>
           <p id="lists-error" class="hint result-error hidden" role="alert"></p>
           <ul id="lists-items" class="hidden"></ul>

@@ -961,6 +961,7 @@ body.auth-locked #icp-bar { display: none !important; }
 /* One extraction. A button, not a div — the whole row is the control. */
 .lists-item {
   width: 100%;
+  min-height: 44px;
   text-align: left;
   display: flex;
   flex-direction: column;
