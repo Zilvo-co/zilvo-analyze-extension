@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zilvo Company Analyzer - AI Company Research",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Analyze company websites and LinkedIn company pages with AI. Research businesses, identify target customers, and check ICP fit.",
   "icons": {
     "16": "icons/icon16.png",

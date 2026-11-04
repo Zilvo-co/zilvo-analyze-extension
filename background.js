@@ -15,6 +15,7 @@
 import { sleep, normalizeLinkedInUrl, isRetryableError } from './helpers/utils.js';
 import { API, apiUrl, ZILVO_APP } from './helpers/constants.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
+import { onboardingUrlFor } from './helpers/onboarding.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits } from './helpers/bulk-status.js';
 import { isSendingStale, reconcileStale, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs } from './helpers/bulk-batch.js';
 
@@ -147,6 +148,12 @@ const EXTRACT_POLL_SHORT     = 5_000;    // first look: is this view going to ha
 const EXTRACT_POLL_TIMEOUT   = 15_000;   // full budget once we are on a view that should have it
 
 // ─── Message router ───────────────────────────────────────────────────────────
+// Fresh install: open the getting-started guide in a new tab.
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  const url = onboardingUrlFor(reason);
+  if (url) chrome.tabs.create({ url }).catch(console.error);
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   routeMessage(message, sender, sendResponse);
   return true; // keep the channel open for async responses
