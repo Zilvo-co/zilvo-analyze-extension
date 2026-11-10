@@ -48,6 +48,16 @@ const HOSTS = {
 export const ZILVO_API = HOSTS[ZILVO_ENV].api;
 export const ZILVO_APP = HOSTS[ZILVO_ENV].app;
 
+/**
+ * Marketing site (uninstall feedback, docs). Follows ZILVO_ENV for the same
+ * reason as the host pair above: local testing should open the local site.
+ */
+const SITES = {
+  local: 'http://localhost:8080',
+  production: 'https://zilvo.co',
+};
+export const ZILVO_SITE = SITES[ZILVO_ENV];
+
 /** REST endpoints, relative to ZILVO_API. */
 export const API = {
   login:   '/api/auth/login',

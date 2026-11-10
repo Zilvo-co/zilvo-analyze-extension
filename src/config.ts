@@ -7,6 +7,7 @@
 // Settings, and the app-origin rule the token resolver depends on.
 export {
   ZILVO_ENV,
+  ZILVO_SITE,
   API,
   APP,
   apiUrl,

@@ -4,6 +4,7 @@
 export declare const ZILVO_ENV: 'local' | 'production';
 export declare const ZILVO_API: string;
 export declare const ZILVO_APP: string;
+export declare const ZILVO_SITE: string;
 
 export declare const API: {
   login: string; logout: string; me: string; credits: string;

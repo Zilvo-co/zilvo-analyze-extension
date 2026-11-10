@@ -13,11 +13,19 @@
  */
 
 import { sleep, normalizeLinkedInUrl, isRetryableError } from './helpers/utils.js';
-import { API, apiUrl, ZILVO_APP } from './helpers/constants.js';
+import { API, apiUrl, ZILVO_APP, ZILVO_SITE } from './helpers/constants.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
 import { onboardingUrlFor } from './helpers/onboarding.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits } from './helpers/bulk-status.js';
 import { isSendingStale, reconcileStale, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs } from './helpers/bulk-batch.js';
+
+// Chrome opens this page when the extension is uninstalled, so we can learn why
+// people leave. The page is extension-aware (`?ext=analyze`).
+try {
+  chrome.runtime.setUninstallURL(`${ZILVO_SITE}/extension-uninstalled/analyze/`);
+} catch (err) {
+  console.warn('[Zilvo] setUninstallURL failed:', err);
+}
 
 // Open the side panel (right-side panel) when the toolbar icon is clicked.
 // Falls back silently in environments where the sidePanel API isn't available.

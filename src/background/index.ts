@@ -4,11 +4,19 @@ import { classifyCompany } from '../utils/api';
 import { waitForTabComplete, sleep, normalizeLinkedInUrl } from '../utils/helpers';
 import { zilvoFetch, logout as zilvoLogout } from '../utils/zilvoApi';
 import { getActiveToken, clearAllTokens, adoptToken } from '../utils/authToken';
-import { TOKEN_ORIGINS, TOKEN_RESET_VERSION, getAppOrigins, API } from '../config';
+import { TOKEN_ORIGINS, TOKEN_RESET_VERSION, getAppOrigins, API, ZILVO_SITE } from '../config';
 import type { AppSettings, ClassificationResult, LinkedInData, ExtractedContent, ProgressStep } from '../types';
 
 const LINKEDIN_RENDER_DELAY = 3_500;
 const WEBSITE_RENDER_DELAY = 2_000;
+
+// Chrome opens this page when the extension is uninstalled, so we can learn why
+// people leave. The page is extension-aware (`?ext=analyze`).
+try {
+  chrome.runtime.setUninstallURL(`${ZILVO_SITE}/extension-uninstalled/analyze/`);
+} catch (err) {
+  console.warn('[Zilvo] setUninstallURL failed:', err);
+}
 
 async function getSettings(): Promise<AppSettings> {
   return new Promise(resolve => {
