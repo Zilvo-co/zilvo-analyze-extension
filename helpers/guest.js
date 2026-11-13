@@ -21,9 +21,114 @@ export const CREDITS_PER_ANALYSIS = 5;
 const TOKEN_KEY = 'zilvo_guest_token';
 const QUOTA_KEY = 'zilvo_guest_quota';
 
-async function readToken() {
+// ── Shared guest identity ──────────────────────────────────────────────────
+// chrome.storage.local is isolated per extension, so this extension and the
+// LinkedIn scraper would otherwise mint two guest IDs for one browser. Both
+// share the signed token through a cookie on the API origin. The platform keeps
+// ONE GuestQuota row: the Analyze budget and the 50-row LinkedIn budget stay
+// separate on that row.
+const GUEST_COOKIE_URL = 'https://api.zilvo.co';
+const GUEST_COOKIE_NAME = 'zilvo_guest';
+const GUEST_COOKIE_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+async function readSharedGuestToken() {
+  try {
+    const cookie = await chrome.cookies.get({ url: GUEST_COOKIE_URL, name: GUEST_COOKIE_NAME });
+    return cookie?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSharedGuestToken(token) {
+  if (!token) return;
+  try {
+    await chrome.cookies.set({
+      url: GUEST_COOKIE_URL,
+      name: GUEST_COOKIE_NAME,
+      value: token,
+      path: '/',
+      secure: true,
+      httpOnly: true,
+      sameSite: 'lax',
+      expirationDate: Math.floor(Date.now() / 1000) + GUEST_COOKIE_TTL_SECONDS,
+    });
+  } catch {
+    // The local token still works if the cookie API is unavailable.
+  }
+}
+
+async function readLocalGuestToken() {
   const { [TOKEN_KEY]: token } = await chrome.storage.local.get(TOKEN_KEY);
-  return token || '';
+  return token || null;
+}
+
+async function writeLocalGuestToken(token) {
+  if (token) await chrome.storage.local.set({ [TOKEN_KEY]: token });
+}
+
+/** Combined trial usage across BOTH products; used only to resolve a clash. */
+async function guestUsageScore(token) {
+  if (!token) return 0;
+  const headers = { 'X-Guest-Token': token };
+  const read = (url) =>
+    fetch(url, { headers, cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+  const [li, ci] = await Promise.all([
+    read(apiUrl('/api/linkedin/guest/quota')),
+    read(apiUrl(API.guestQuota)),
+  ]);
+  return (Number(li?.used) || 0) + (Number(ci?.used) || 0);
+}
+
+function guestTokenIssuedAt(token) {
+  try {
+    const part = String(token).split('.')[1] || '';
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '==='.slice((b64.length + 3) % 4);
+    return Number(JSON.parse(atob(padded)).iat) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Canonical token for this browser. If both extensions already hold a different
+ * used token (e.g. the update arrives after both were used), keep the one with
+ * more combined usage; the older token breaks a tie. The loser's trial usage is
+ * abandoned — guest trials are ephemeral, and the alternative is two identities.
+ */
+async function resolveGuestToken() {
+  const shared = await readSharedGuestToken();
+  const local = await readLocalGuestToken();
+  if (!shared) {
+    if (local) {
+      await writeSharedGuestToken(local);
+      return local;
+    }
+    return null;
+  }
+  if (!local || local === shared) return shared;
+
+  const [sharedScore, localScore] = await Promise.all([
+    guestUsageScore(shared),
+    guestUsageScore(local),
+  ]);
+  let winner = shared;
+  if (localScore > sharedScore) winner = local;
+  else if (localScore === sharedScore) {
+    const sharedAt = guestTokenIssuedAt(shared);
+    const localAt = guestTokenIssuedAt(local);
+    if (localAt && (!sharedAt || localAt < sharedAt)) winner = local;
+  }
+  await writeSharedGuestToken(winner);
+  await writeLocalGuestToken(winner);
+  return winner;
+}
+
+async function readToken() {
+  return (await resolveGuestToken()) || '';
 }
 
 /** Persist the guest token + the latest quota snapshot from any response. */
@@ -31,6 +136,7 @@ async function persist(payload) {
   const patch = {};
   if (typeof payload?.guestToken === 'string' && payload.guestToken) {
     patch[TOKEN_KEY] = payload.guestToken;
+    await writeSharedGuestToken(payload.guestToken);
   }
   const quota = quotaOf(payload);
   if (quota) {
@@ -180,5 +286,9 @@ export async function claimGuestAnalyses(userToken) {
 
 /** Drop the guest trial after the user signs in (their account takes over). */
 export async function clearGuestSession() {
+  // Keep the shared cookie pointing at the (now claimed) guest identity, so the
+  // other extension does not mint a fresh trial after logout.
+  const token = await readLocalGuestToken();
+  if (token) await writeSharedGuestToken(token);
   await chrome.storage.local.remove([TOKEN_KEY, QUOTA_KEY]);
 }
