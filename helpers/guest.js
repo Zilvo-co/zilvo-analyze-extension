@@ -46,8 +46,9 @@ function quotaOf(data) {
   if (!data) return null;
   const source = data.quota && Number.isFinite(Number(data.quota.remaining)) ? data.quota : data;
   if (!Number.isFinite(Number(source.remaining))) return null;
-  const creditCost = Number(source.creditCost);
-  const signupCredits = Number(source.signupCredits);
+  // Submission/results responses keep the flat cost next to `quota`.
+  const creditCost = Number(source.creditCost ?? data.creditCost);
+  const signupCredits = Number(source.signupCredits ?? data.signupCredits);
   return {
     limit: Number(source.limit) || 50,
     used: Number(source.used) || 0,
