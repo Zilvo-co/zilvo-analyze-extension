@@ -103,12 +103,35 @@ const guestBannerCount = $('guest-banner-count');
 const guestSignupLink  = $('guest-signup-link');
 const guestExhausted   = $('guest-exhausted');
 const guestSignupBtn   = $('guest-signup-btn');
+const guestSignupCreditsEl = $('guest-signup-credits');
+const guestBonusCreditsEl  = $('guest-bonus-credits');
+const guestTotalCreditsEl  = $('guest-total-credits');
+const analyzeCreditCostEl  = $('analyze-credit-cost');
 
 /** Guest trial (no account): 50 free analyses via the public guest API. */
 let _guestMode = false;
 let _guestQuota = null;
 
+/** Keep the "N credits each" copy in step with the platform price list. */
+function setAnalyzeCreditCost(cost) {
+  const n = Math.max(1, Number(cost) || CREDITS_PER_ANALYSIS);
+  if (analyzeCreditCostEl) analyzeCreditCostEl.textContent = String(n);
+}
+
+async function loadAnalyzeCreditCost() {
+  try {
+    const res = await fetch(apiUrl(API.pricing), { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const entry = (data.actions || []).find(a => a.action === 'ci.analyze');
+    if (entry) setAnalyzeCreditCost(entry.creditCost);
+  } catch {
+    // Offline/blocked: the quota response (guests) or the fallback still shows.
+  }
+}
+
 async function initAuth() {
+  loadAnalyzeCreditCost();
   loginBtn.addEventListener('click', () => {
     chrome.tabs.create({ url: ZILVO_LOGIN_URL });
     // Sign-in happens on the web app; the panel is told about it over the
@@ -279,11 +302,11 @@ async function initGuest() {
   syncAuthOverlay();
 }
 
-const CARD_LOCK_TEXT = {
-  linkedin: `Requires ${CREDITS_PER_ANALYSIS} credits`,
-  website: `Requires ${CREDITS_PER_ANALYSIS} credits`,
-  lists: 'Requires active credits',
-};
+function cardLockText(target) {
+  const cost = Math.max(1, Number(_guestQuota?.creditCost) || CREDITS_PER_ANALYSIS);
+  if (target === 'lists') return 'Requires active credits';
+  return `Requires ${cost} credit${cost === 1 ? '' : 's'}`;
+}
 
 function applyCardLocks(locked) {
   document.querySelectorAll('.home-card[data-view-target]').forEach((card) => {
@@ -292,16 +315,23 @@ function applyCardLocks(locked) {
     if (sub && !sub.dataset.original) sub.dataset.original = sub.textContent;
     card.classList.toggle('is-locked', locked);
     card.disabled = locked;
-    if (sub) sub.textContent = locked ? CARD_LOCK_TEXT[target] || 'Requires credits' : sub.dataset.original;
+    if (sub) sub.textContent = locked ? cardLockText(target) : sub.dataset.original;
   });
 }
 
 function applyGuestState(quota) {
   if (!quota) return;
-  _guestQuota = quota;
-  // The API reports ANALYSES remaining; the panel speaks credits (5 per analysis).
+  // The API reports ANALYSES remaining; the panel speaks credits. Both the
+  // per-analysis cost and the signup bonus come from the backend, so changing
+  // them never requires republishing the extension.
+  const cost = Math.max(1, Number(quota.creditCost) || Number(_guestQuota?.creditCost) || CREDITS_PER_ANALYSIS);
+  const signup = Math.max(0, Number(quota.signupCredits) || Number(_guestQuota?.signupCredits) || 450);
+  _guestQuota = { ...quota, creditCost: cost, signupCredits: signup };
+  setAnalyzeCreditCost(cost);
+
   const remaining = Math.max(0, Number(quota.remaining) || 0);
-  const credits = remaining * CREDITS_PER_ANALYSIS;
+  const total = Math.max(remaining, Number(quota.limit) || remaining) * cost;
+  const credits = remaining * cost;
   userCredits.textContent = `${credits.toLocaleString()} credits left`;
   creditPill.classList.toggle('is-empty', credits <= 0);
 
@@ -309,6 +339,9 @@ function applyGuestState(quota) {
     guestBanner.classList.toggle('hidden', credits <= 0);
     guestExhausted.classList.toggle('hidden', credits > 0);
     if (guestBannerCount) guestBannerCount.textContent = String(credits);
+    if (guestSignupCreditsEl) guestSignupCreditsEl.textContent = String(signup);
+    if (guestBonusCreditsEl) guestBonusCreditsEl.textContent = String(signup);
+    if (guestTotalCreditsEl) guestTotalCreditsEl.textContent = String(total);
   } else {
     guestBanner.classList.add('hidden');
     guestExhausted.classList.add('hidden');
