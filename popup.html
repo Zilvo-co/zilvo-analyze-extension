@@ -16,23 +16,14 @@
         <img class="logo-mark" src="icons/zilvo-logo.png" alt="">
         <div class="logo-text">
           <h1>Zilvo Analyze</h1>
-          <p>Company intelligence</p>
         </div>
       </div>
 
       <div id="user-badge" class="user-badge hidden">
-        <span class="connected-pill">
-          <span class="connected-dot" aria-hidden="true"></span>
-          Connected
-          <span class="connected-sep" aria-hidden="true"></span>
-          <span id="user-credits" class="credits-badge">— cr</span>
+        <span id="credit-pill" class="credit-pill">
+          <span class="credit-dot" aria-hidden="true"></span>
+          <span id="user-credits" class="credit-text">— credits left</span>
         </span>
-        <button id="refresh-btn" class="icon-btn" title="Refresh detection" aria-label="Refresh detection">
-          <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14" aria-hidden="true">
-            <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-          </svg>
-        </button>
       </div>
     </header>
 
@@ -125,6 +116,29 @@
          old tab bar is gone, so every feature screen returns here via Back. -->
     <div id="view-home" class="view home" data-view="home">
       <div class="main home-main">
+        <!-- Guest trial: active while credits remain, exhausted at zero. -->
+        <div id="guest-banner" class="guest-banner hidden">
+          <div class="guest-banner-row">
+            <span class="guest-banner-icon guest-banner-icon--ok" aria-hidden="true">✓</span>
+            <div class="guest-banner-copy">
+              <strong>Guest access active</strong>
+              <p>You have <span id="guest-banner-count">50</span> free credits. Sign up anytime to claim 450 additional analysis credits.</p>
+            </div>
+            <a id="guest-signup-link" class="guest-banner-link" href="#" target="_blank" rel="noopener">Sign up →</a>
+          </div>
+        </div>
+
+        <div id="guest-exhausted" class="guest-banner guest-banner--warn hidden">
+          <div class="guest-banner-row">
+            <span class="guest-banner-icon guest-banner-icon--warn" aria-hidden="true">!</span>
+            <div class="guest-banner-copy">
+              <strong>Guest trial exhausted</strong>
+              <p>You've used all 50 free credits. Sign up now to unlock <strong>450 bonus credits</strong> and resume analyzing.</p>
+            </div>
+          </div>
+          <button id="guest-signup-btn" class="guest-cta" type="button">Sign up free</button>
+        </div>
+
         <p class="home-eyebrow">What would you like to do?</p>
 
         <div class="home-actions">
@@ -138,6 +152,11 @@
               <span class="home-card-title">Analyze company&rsquo;s LinkedIn profile</span>
               <span class="home-card-sub">Extract and qualify companies from supported LinkedIn pages.</span>
             </span>
+            <svg class="home-card-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="2"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
             <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 3.5 10.5 8 6 12.5"/>
@@ -157,6 +176,11 @@
               <span class="home-card-sub">Evaluate the current company website or enter a URL.</span>
               <span id="home-batch-note" class="home-card-sub hidden" role="status"></span>
             </span>
+            <svg class="home-card-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="2"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
             <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 3.5 10.5 8 6 12.5"/>
@@ -176,6 +200,11 @@
               <span class="home-card-title">Analyze an extracted list</span>
               <span class="home-card-sub">Score every company in an extracted list &mdash; no CSV export needed.</span>
             </span>
+            <svg class="home-card-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="2"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
             <svg class="home-card-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 3.5 10.5 8 6 12.5"/>
@@ -204,6 +233,9 @@
         </div>
 
         <div class="home-rule" aria-hidden="true"></div>
+        <footer class="home-footer">Powered by
+          <a href="https://zilvo.co" target="_blank" rel="noopener">Zilvo</a>
+        </footer>
       </div>
     </div>
 
@@ -457,6 +489,7 @@
           </div>
           <div id="web-bulk-form">
           <p class="panel-sub">Upload a CSV containing company website URLs.</p>
+          <p class="hint">One credit per unique website (5 credits each) — duplicates and already-analyzed sites don't use a new credit.</p>
 
           <input type="file" id="web-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
           <label for="web-csv-input" class="btn btn-amber btn--file">

@@ -1683,3 +1683,165 @@ body.auth-locked .app-accent { display: none !important; }
 
 /* Pause/resume buttons: keep a >=44px touch target (the base .btn is shorter). */
 #lists-pause-btn, #bulk-pause-btn { min-height: 44px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Guest trial + credit capsule (Zilvo Analyze home)
+   Matches the shared design: green/red credit pill, guest banners, locked
+   cards at zero credits, white bordered cards.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Credit capsule ─────────────────────────────────────────────────────── */
+.credit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #e9f7f1;
+  color: #1f8f6b;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.credit-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #22a06b;
+}
+.credit-pill.is-empty {
+  background: #fecaca;
+  color: #991b1b;
+}
+.credit-pill.is-empty .credit-dot { background: #ef4444; }
+
+/* ── Guest banners ──────────────────────────────────────────────────────── */
+.guest-banner {
+  margin-bottom: clamp(12px, 2.4vw, 18px);
+  padding: clamp(11px, 2.2vw, 16px) clamp(12px, 2.4vw, 18px);
+  border: 1px solid #cdeee0;
+  border-radius: 12px;
+  background: #f2fbf6;
+}
+.guest-banner--warn {
+  border-color: #f3ddc4;
+  background: #fff8f0;
+}
+.guest-banner-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.guest-banner-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 1px;
+}
+.guest-banner-icon--ok { background: #d9efe4; color: #1f8f6b; }
+.guest-banner-icon--warn { background: #fde3c4; color: #b45309; }
+.guest-banner-copy { flex: 1; min-width: 0; }
+/* Title only (direct child). The inline <strong> inside the paragraph must
+   stay inline — it is part of the sentence, not a second heading. */
+.guest-banner-copy > strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: #1f8f6b;
+}
+.guest-banner--warn .guest-banner-copy > strong { color: #7a3e12; }
+.guest-banner-copy p strong {
+  display: inline;
+  font-size: inherit;
+  font-weight: 800;
+  color: inherit;
+}
+.guest-banner-copy p {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #4b7f6b;
+}
+.guest-banner--warn .guest-banner-copy p { color: #8a5a00; }
+.guest-banner-link {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f8f6b;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.guest-banner-link:hover { text-decoration: underline; }
+.guest-cta {
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--gradient-cta);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.guest-cta:hover { filter: brightness(1.05); }
+
+/* ── Home cards — white, bordered, as in the design ─────────────────────── */
+.home-card {
+  background: #fff;
+  border: 1px solid #e9ebf1;
+  border-radius: 14px;
+  padding: clamp(12px, 2.4vw, 18px) clamp(12px, 2.6vw, 20px);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.home-card--results {
+  background: #eefaf4;
+  border-color: #cdeee0;
+}
+.home-card-icon {
+  width: clamp(34px, 7vw, 44px);
+  height: clamp(34px, 7vw, 44px);
+  border-radius: 10px;
+}
+.home-card-icon svg { width: clamp(17px, 3.4vw, 22px); height: auto; }
+.home-card-title { font-size: clamp(14px, 2.4vw, 17px); }
+.home-card-sub { font-size: clamp(11.5px, 2vw, 13px); }
+
+/* ── Locked at zero credits ─────────────────────────────────────────────── */
+.home-card-lock { display: none; width: clamp(15px, 2.4vw, 18px); height: auto; flex-shrink: 0; color: #9aa3b2; }
+.home-card.is-locked {
+  background: #f8f9fb;
+  border-color: #eef0f4;
+  cursor: not-allowed;
+}
+.home-card.is-locked:hover { transform: none; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); }
+.home-card.is-locked .home-card-title { color: #9aa3b2; }
+.home-card.is-locked .home-card-sub { color: #b3bcc9; }
+.home-card.is-locked .home-card-icon { opacity: 0.55; }
+.home-card.is-locked .home-card-chev { display: none; }
+.home-card.is-locked .home-card-lock { display: block; }
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.home-footer {
+  padding-top: clamp(10px, 2vw, 14px);
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.home-footer a { color: #1f8f6b; text-decoration: none; font-weight: 600; }
+
+/* LinkedIn action keeps the brand-blue square from the design (the results
+   card shares the mint class and stays green). */
+.home-card--mint:not(.home-card--results) .home-card-icon--mint {
+  background: #2563eb;
+  color: #fff;
+}

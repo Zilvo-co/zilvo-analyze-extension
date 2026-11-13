@@ -15,6 +15,7 @@
 import { sleep, normalizeLinkedInUrl, isRetryableError } from './helpers/utils.js';
 import { API, apiUrl, ZILVO_APP, ZILVO_SITE } from './helpers/constants.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
+import { claimGuestAnalyses, clearGuestSession, getGuestToken } from './helpers/guest.js';
 import { onboardingUrlFor } from './helpers/onboarding.js';
 import { bulkRowOutcome, bulkNotSentOutcome, isOutOfCredits } from './helpers/bulk-status.js';
 import { isSendingStale, reconcileStale, makeBulkBatchId, chunkUrls, mapBulkResults, failRows, expectedJobs } from './helpers/bulk-batch.js';
@@ -196,6 +197,16 @@ async function routeMessage(message, sender, sendResponse) {
         sendResponse(await analyzeLinkedInCompany(message.tabId, message.token, message.userInputField, message.batchId));
         break;
 
+      // Guest trial: resolve the company website, then the popup submits it to
+      // the public guest analyzer (no Bearer token involved).
+      case 'RESOLVE_LINKEDIN_WEBSITE':
+        sendResponse(await resolveLinkedInWebsite(message.tabId, message.userInputField));
+        break;
+
+      case 'RESOLVE_LINKEDIN_WEBSITE_URL':
+        sendResponse(await resolveLinkedInWebsiteFromUrl(message.linkedinUrl, message.userInputField));
+        break;
+
       case 'ANALYZE_COMPANY_URL':
         sendResponse(await analyzeLinkedInUrl(message.linkedinUrl, message.token, message.userInputField, message.batchId, message.run));
         break;
@@ -223,6 +234,14 @@ async function routeMessage(message, sender, sendResponse) {
         await chrome.storage.local.set({
           [_AUTH_KEY]: { token: message.token, user: message.user, origin: ZILVO_APP },
         });
+        // Import anything analysed as a guest into the account that just signed
+        // in, even when the popup is closed. Idempotent on the server, and the
+        // popup's own claim is harmless if it runs too.
+        claimGuestAnalyses(message.token)
+          .then((result) => {
+            if (result) return clearGuestSession();
+          })
+          .catch(() => {});
         broadcast({ action: 'ZILVO_AUTH_SYNCED', user: message.user, token: message.token });
         sendResponse({ success: true });
         break;
@@ -570,7 +589,14 @@ async function analyzeLinkedInCompany(tabId, token, userInputField, batchId, run
   return result;
 }
 
-async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId, run = {}) {
+/**
+ * Resolve the company's website from a loaded LinkedIn company tab.
+ *
+ * Split out of analyzeLinkedInCompanyOnce so the guest trial can reuse the
+ * same extraction (and /about/ fallback) and then submit the website to the
+ * public guest analyzer, which does not accept a Bearer token.
+ */
+async function resolveLinkedInWebsite(tabId, userInputField) {
   // Short first look. If this tab is the company HOME view the Website field
   // will NEVER appear on it however long we wait, so spending the full poll
   // budget here would only delay the /about/ fallback that does have the data.
@@ -583,8 +609,6 @@ async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId,
   // that never contained a website — and we told the user the company had not
   // listed one while their screen showed it. Check /about/ before believing it.
   if (!liData.websiteUrl && isAboutView(liData.linkedinUrl)) {
-    // Already on the right view — the field is simply still rendering. Spend
-    // the rest of the budget here rather than opening a redundant second tab.
     liData = await extractUntilFound(tabId, EXTRACT_POLL_TIMEOUT - EXTRACT_POLL_SHORT) || liData;
   }
 
@@ -600,31 +624,71 @@ async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId,
   }
 
   if (!liData.websiteUrl) {
-    // Dump what the page actually looked like, so the next failure explains
-    // itself instead of needing another round of guessing at selectors.
     console.error('[Zilvo] website extraction failed —', liData.debug || '(no debug payload)');
     return {
       success: false,
-      error:   'No website URL found on this LinkedIn page. Open the company\u2019s About tab and retry, or paste the website URL in the Website tab.',
+      error: 'No website URL found on this LinkedIn page. Open the company\u2019s About tab and retry, or paste the website URL in the Website tab.',
     };
   }
 
+  return {
+    success: true,
+    websiteUrl: liData.websiteUrl,
+    linkedinUrl: liData.linkedinUrl,
+    companyName: liData.companyName || undefined,
+    linkedinIndustry: liData.industry || undefined,
+    linkedinEmployeeCount: liData.employeeCount || undefined,
+    linkedinFollowerCount: liData.followerCount || undefined,
+  };
+}
+
+async function analyzeLinkedInCompanyOnce(tabId, token, userInputField, batchId, run = {}) {
+  const resolved = await resolveLinkedInWebsite(tabId, userInputField);
+  if (!resolved.success) return resolved;
+
   // Open the company website in a background tab and scrape its DOM content
-  const pageContent = await scrapeWebsiteInBackground(liData.websiteUrl);
+  const pageContent = await scrapeWebsiteInBackground(resolved.websiteUrl);
 
   return callZilvoAnalyze({
     token,
-    linkedinUrl:           liData.linkedinUrl,
-    websiteUrl:            liData.websiteUrl,
-    companyName:           liData.companyName           || undefined,
-    linkedinIndustry:      liData.industry              || undefined,
-    linkedinEmployeeCount: liData.employeeCount         || undefined,
-    linkedinFollowerCount: liData.followerCount         || undefined,
+    linkedinUrl: resolved.linkedinUrl,
+    websiteUrl: resolved.websiteUrl,
+    companyName: resolved.companyName,
+    linkedinIndustry: resolved.linkedinIndustry,
+    linkedinEmployeeCount: resolved.linkedinEmployeeCount,
+    linkedinFollowerCount: resolved.linkedinFollowerCount,
     pageContent,
-    userInputField:        userInputField               || liData.linkedinUrl,
+    userInputField: userInputField || resolved.linkedinUrl,
     batchId,
     ...run,
   });
+}
+
+/**
+ * Guest counterpart of analyzeLinkedInUrl: open /about/ in a managed tab,
+ * resolve the website, close the tab. The popup then submits that website to
+ * the public guest analyzer.
+ */
+async function resolveLinkedInWebsiteFromUrl(linkedinUrl, userInputField) {
+  let tabId = null;
+  try {
+    const match = linkedinUrl.match(/linkedin\.com\/company\/([a-zA-Z0-9\-_.%]+)/);
+    if (!match) return { success: false, error: 'Invalid LinkedIn company URL.' };
+    const url = `https://www.linkedin.com/company/${match[1].replace(/\/$/, '')}/about/`;
+
+    tabId = await createManagedTab(url);
+    await waitForTabOrDeadline(tabId, LINKEDIN_LOAD_TIMEOUT, LINKEDIN_SOFT_DEADLINE);
+    await sleep(TAB_SETTLE_DELAY);
+
+    return await resolveLinkedInWebsite(tabId, userInputField || linkedinUrl);
+  } catch (err) {
+    return { success: false, error: err.message || 'Failed to load LinkedIn page.' };
+  } finally {
+    if (tabId) {
+      _managedTabIds.delete(tabId);
+      await safeCloseTab(tabId);
+    }
+  }
 }
 
 // Opens a URL in a hidden background tab, injects the content extractor, returns the text.
@@ -722,7 +786,12 @@ const BULK_ROWS_KEY   = 'zilvoBulkRows';
 const BULK_LAST_KEY   = 'zilvoBulkLast';
 
 async function startBulkWebsite({ urls, fileName, token, retry }) {
-  if (!token) return { success: false, error: 'Not signed in.' };
+  // No account token? Guests use the public bulk endpoint (same 50-credit trial).
+  let guestToken = '';
+  if (!token) {
+    guestToken = await getGuestToken();
+    if (!guestToken) return { success: false, error: 'Guest session unavailable. Reopen the extension.' };
+  }
   const stored = await chrome.storage.local.get([BULK_ACTIVE_KEY, BULK_ROWS_KEY, BULK_LAST_KEY]);
   if (stored[BULK_ACTIVE_KEY]?.phase === 'sending') {
     if (!isSendingStale(stored[BULK_ACTIVE_KEY])) return { success: false, error: 'A bulk upload is already being sent.' };
@@ -755,8 +824,185 @@ async function startBulkWebsite({ urls, fileName, token, retry }) {
   await chrome.storage.local.set({ [BULK_ACTIVE_KEY]: active, [BULK_ROWS_KEY]: rows });
 
   // Deliberately not awaited: the popup gets its answer now and follows along via storage.
+  if (guestToken) {
+    runGuestBulkWebsite(active, rows, targets, guestToken).catch(err =>
+      console.error('[Zilvo] guest bulk run failed:', err)
+    );
+    return { success: true, batchId: active.batchId, guest: true };
+  }
   runBulkWebsite(active, rows, targets, token).catch(err => console.error('[Zilvo] bulk run failed:', err));
   return { success: true, batchId: active.batchId };
+}
+
+/** Host key for matching the guest endpoint's accepted/rejected lists — the
+ *  server dedupes by registrable host, not by full URL. */
+function bulkUrlKey(url) {
+  let raw = String(url || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (!/^https?:\/\//.test(raw)) raw = `https://${raw}`;
+  try {
+    return new URL(raw).hostname.replace(/^www\./, '');
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+/**
+ * Guest counterpart of runBulkWebsite: one POST to the public bulk endpoint.
+ * The server reserves one analysis (5 credits) per accepted URL and rejects the
+ * rest once the trial is spent; rows are written in the same shape the popup's
+ * bulk UI already renders.
+ */
+async function runGuestBulkWebsite(active, rows, targets, guestToken) {
+  const urls = targets.map(i => rows[i].url);
+  const stillActive = async () => {
+    const cur = (await chrome.storage.local.get(BULK_ACTIVE_KEY))[BULK_ACTIVE_KEY];
+    return !!cur && cur.batchId === active.batchId;
+  };
+
+  let data = null;
+  let ok = false;
+  let error = '';
+  try {
+    const res = await fetch(apiUrl(API.guestBulk), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Guest-Token': guestToken },
+      body: JSON.stringify({ urls }),
+    });
+    const raw = await res.text().catch(() => '');
+    try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+    ok = res.ok;
+    if (!ok) {
+      error = data?.error?.message || data?.message || `Analysis failed (HTTP ${res.status})`;
+    }
+  } catch (err) {
+    error = `Cannot reach Zilvo server: ${err.message}`;
+  }
+
+  if (!ok) {
+    for (const i of targets) {
+      rows[i] = { url: rows[i].url, kind: 'failed', state: 'error', label: 'Failed', reason: error };
+    }
+  } else {
+    const accepted = new Map(
+      (Array.isArray(data?.accepted) ? data.accepted : []).map(a => [bulkUrlKey(a.website || a.url), a])
+    );
+    const rejected = new Map(
+      (Array.isArray(data?.rejected) ? data.rejected : []).map(r => [bulkUrlKey(r.url), r])
+    );
+
+    for (const i of targets) {
+      const key = bulkUrlKey(rows[i].url);
+      const a = accepted.get(key);
+      if (a) {
+        rows[i] = { url: rows[i].url, kind: 'queued', state: 'queued', label: 'Queued', reason: '', jobId: a.jobId || '' };
+        continue;
+      }
+      const r = rejected.get(key);
+      if (r && r.reason === 'quota_exceeded') {
+        rows[i] = {
+          url: rows[i].url,
+          kind: 'notSent',
+          state: 'pending',
+          label: 'Not sent',
+          reason: 'Free guest limit reached — sign up to analyze the rest.',
+        };
+        continue;
+      }
+      rows[i] = {
+        url: rows[i].url,
+        kind: 'failed',
+        state: 'error',
+        label: 'Failed',
+        reason: (r && (r.message || r.reason)) || 'Not analyzed.',
+      };
+    }
+  }
+
+  active.guest = true;
+  active.guestCounts = data?.counts || null;
+  const jobIds = [...new Set(rows.filter(r => r.jobId).map(r => r.jobId))];
+  active.expected = jobIds.length;
+
+  const broadcastQuota = (remaining) => {
+    const n = Number(remaining);
+    if (Number.isFinite(n)) {
+      chrome.runtime.sendMessage({ action: 'guestQuotaUpdated', remaining: n }).catch(() => {});
+    }
+  };
+  broadcastQuota(data?.remaining ?? data?.quota?.remaining);
+
+  if (!ok || !jobIds.length) {
+    await finishGuestBulk(active, rows);
+    return;
+  }
+
+  // Follow the analyses so the rows move Queued → Done/Failed instead of
+  // sitting on "Queued" forever.
+  active.phase = 'tracking';
+  if (!(await stillActive())) return;
+  await chrome.storage.local.set({ [BULK_ROWS_KEY]: rows, [BULK_ACTIVE_KEY]: active });
+
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(3000);
+    if (!(await stillActive())) return;
+
+    let result = null;
+    try {
+      const res = await fetch(
+        `${apiUrl(API.guestResults)}?ids=${encodeURIComponent(jobIds.join(','))}`,
+        { headers: { 'X-Guest-Token': guestToken }, cache: 'no-store' }
+      );
+      result = res.ok ? await res.json() : null;
+    } catch {
+      result = null;
+    }
+    if (!result) continue;
+
+    let changed = false;
+    for (const r of Array.isArray(result.results) ? result.results : []) {
+      // A duplicate row (same host, deduped server-side) shares the job id —
+      // update every row pointing at it, not just the first.
+      for (const row of rows.filter(x => x.jobId === r.jobId)) {
+        if (r.status === 'done') {
+          if (row.kind !== 'done') {
+            row.kind = 'done'; row.state = 'done'; row.label = 'Done'; row.reason = ''; changed = true;
+          }
+        } else if (r.status === 'failed') {
+          if (row.kind !== 'failed') {
+            row.kind = 'failed'; row.state = 'error'; row.label = 'Failed';
+            row.reason = r.error || 'Analysis failed.'; changed = true;
+          }
+        } else {
+          const label = r.status === 'processing' ? 'Analyzing…' : 'Queued';
+          if (row.label !== label) {
+            row.kind = 'queued'; row.state = 'queued'; row.label = label; changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      if (!(await stillActive())) return;
+      await chrome.storage.local.set({ [BULK_ROWS_KEY]: rows, [BULK_ACTIVE_KEY]: active });
+    }
+    broadcastQuota(result.quota?.remaining);
+    if (result.finished) break;
+  }
+
+  await finishGuestBulk(active, rows);
+}
+
+/** Close a guest batch: keep the rows + summary, stop tracking. */
+async function finishGuestBulk(active, rows) {
+  active.phase = 'finished';
+  active.finishedAt = Date.now();
+  await chrome.storage.local.set({
+    [BULK_ROWS_KEY]: rows,
+    [BULK_LAST_KEY]: { ...active, finishedAt: Date.now() },
+  });
+  await chrome.storage.local.remove(BULK_ACTIVE_KEY);
 }
 
 async function postBulkChunk(token, body) {

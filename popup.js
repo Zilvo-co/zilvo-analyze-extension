@@ -9,7 +9,8 @@
 
 import { isValidLinkedInCompanyUrl } from './helpers/utils.js';
 import { getStoredAuth, updateStoredCredits } from './helpers/auth.js';
-import { API, APP, apiUrl, appUrl, analysisResultUrl } from './helpers/constants.js';
+import { API, APP, ZILVO_APP, apiUrl, appUrl, analysisResultUrl } from './helpers/constants.js';
+import { getGuestQuota, getStoredGuestQuota, getGuestToken, submitGuestAnalyze, pollGuestResults, claimGuestAnalyses, clearGuestSession, CREDITS_PER_ANALYSIS } from './helpers/guest.js';
 import { homeBatchNote, isSendingStale, reconcileStale, BULK_ROWS_POLL_MS, applyJobStatuses, BULK_POLL_MS, findBatch, batchCounts, isBatchFinished, batchProgressLine, batchPercent } from './helpers/bulk-batch.js';
 import { listCountsText, skippedLeadsNote } from './helpers/list-counts.js';
 import { createRunGate, unsentIndexes } from './helpers/run-gate.js';
@@ -96,6 +97,16 @@ const authWaiting  = $('auth-waiting');
 const userBadge    = $('user-badge');
 const userCredits  = $('user-credits');
 const refreshBtn   = $('refresh-btn');
+const creditPill   = $('credit-pill');
+const guestBanner  = $('guest-banner');
+const guestBannerCount = $('guest-banner-count');
+const guestSignupLink  = $('guest-signup-link');
+const guestExhausted   = $('guest-exhausted');
+const guestSignupBtn   = $('guest-signup-btn');
+
+/** Guest trial (no account): 50 free analyses via the public guest API. */
+let _guestMode = false;
+let _guestQuota = null;
 
 async function initAuth() {
   loginBtn.addEventListener('click', () => {
@@ -105,14 +116,34 @@ async function initAuth() {
     authWaiting?.classList.remove('hidden');
   });
 
-  refreshBtn.addEventListener('click', async () => {
+  refreshBtn?.addEventListener('click', async () => {
     resetAllDetection();
     await runDetection();
   });
 
+  // Guest trial sign-up. `from=extension` is the platform's Analyze-extension
+  // marker (lands on the Company Analyzer after signup), and the guest token in
+  // the URL hash is what lets the platform import these analyses into the new
+  // account (`finishGuestHandoff` on the signup/verify page).
+  const SIGNUP_BASE = `${ZILVO_APP}/signup?from=extension`;
+  const openGuestSignup = async (e) => {
+    if (e) e.preventDefault();
+    const token = await getGuestToken();
+    const url = token ? `${SIGNUP_BASE}#guest=${encodeURIComponent(token)}` : SIGNUP_BASE;
+    chrome.tabs.create({ url });
+  };
+  if (guestSignupLink) {
+    guestSignupLink.href = SIGNUP_BASE;
+    guestSignupLink.addEventListener('click', openGuestSignup);
+  }
+  guestSignupBtn?.addEventListener('click', openGuestSignup);
+
   // Live updates from background
   chrome.runtime.onMessage.addListener(msg => {
     if (msg.action === 'ZILVO_AUTH_SYNCED') onAuthSynced(msg);
+    if (msg.action === 'guestQuotaUpdated' && typeof msg.remaining === 'number' && _guestMode) {
+      applyGuestState({ ...(_guestQuota || {}), remaining: msg.remaining });
+    }
   });
 
   icpSelect.addEventListener('change', onIcpChange);
@@ -153,6 +184,8 @@ async function initAuth() {
       await loadLists();
     }
     await runDetection();
+  } else {
+    await initGuest();
   }
   syncAuthOverlay();
 }
@@ -160,7 +193,7 @@ async function initAuth() {
 function syncAuthOverlay() {
   // Every tab needs an account, so the overlay is purely a login gate.
   const loggedIn   = !userBadge.classList.contains('hidden');
-  const showOverlay = !loggedIn;
+  const showOverlay = !loggedIn && !_guestMode;
 
   authOverlay.classList.toggle('hidden', !showOverlay);
 
@@ -178,7 +211,12 @@ function syncAuthOverlay() {
 
 function showUserBadge(user) {
   userBadge.classList.remove('hidden');
-  userCredits.textContent = `${user?.credits ?? '—'} cr`;
+  const known = user?.credits != null;
+  const credits = Number(user?.credits ?? 0);
+  userCredits.textContent = known ? `${credits.toLocaleString()} credits left` : '— credits left';
+  creditPill.classList.toggle('is-empty', known && credits <= 0);
+  guestBanner?.classList.add('hidden');
+  guestExhausted?.classList.add('hidden');
 }
 
 function hideUserBadge() {
@@ -187,14 +225,24 @@ function hideUserBadge() {
 
 async function onAuthSynced(msg) {
   if (msg.loggedOut) {
+    _guestMode = false;
     hideUserBadge();
     // Hide the selector too: the ICPs belong to the account that just signed
     // out, and the next account's list may be completely different.
     _icps = [];
     setIcpState('hidden');
-    syncAuthOverlay();
     resetAllDetection();
+    await initGuest();
+    return;
   } else {
+    _guestMode = false;
+    guestBanner?.classList.add('hidden');
+    guestExhausted?.classList.add('hidden');
+    // Import anything analysed as a guest, then drop the trial.
+    (async () => {
+      await claimGuestAnalyses(msg.token);
+      await clearGuestSession();
+    })().catch(() => {});
     showUserBadge(msg.user);
     await initIcpSelector();
     // A fresh sign-in lands on the home menu; a pending "Open in Zilvo
@@ -204,6 +252,139 @@ async function onAuthSynced(msg) {
     const jumped = await applyPendingList();
     if (!jumped) await loadLists({ force: true });
     if (!_detection) await runDetection();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GUEST TRIAL — 50 free analyses, no account
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Uses the marketing site's public analyzer API (helpers/guest.js). Guests can
+// analyze a website or a LinkedIn company (the extension resolves its website);
+// an extracted list needs an account, because lists belong to one.
+
+async function initGuest() {
+  const quota = (await getGuestQuota()) || (await getStoredGuestQuota());
+  if (!quota) {
+    // Guest API unreachable — fall back to the sign-in gate.
+    _guestMode = false;
+    syncAuthOverlay();
+    return;
+  }
+  _guestMode = true;
+  userBadge.classList.remove('hidden');
+  applyGuestState(quota);
+  showView('home');
+  await runDetection();
+  syncAuthOverlay();
+}
+
+const CARD_LOCK_TEXT = {
+  linkedin: `Requires ${CREDITS_PER_ANALYSIS} credits`,
+  website: `Requires ${CREDITS_PER_ANALYSIS} credits`,
+  lists: 'Requires active credits',
+};
+
+function applyCardLocks(locked) {
+  document.querySelectorAll('.home-card[data-view-target]').forEach((card) => {
+    const target = card.dataset.viewTarget;
+    const sub = card.querySelector('.home-card-sub');
+    if (sub && !sub.dataset.original) sub.dataset.original = sub.textContent;
+    card.classList.toggle('is-locked', locked);
+    card.disabled = locked;
+    if (sub) sub.textContent = locked ? CARD_LOCK_TEXT[target] || 'Requires credits' : sub.dataset.original;
+  });
+}
+
+function applyGuestState(quota) {
+  if (!quota) return;
+  _guestQuota = quota;
+  // The API reports ANALYSES remaining; the panel speaks credits (5 per analysis).
+  const remaining = Math.max(0, Number(quota.remaining) || 0);
+  const credits = remaining * CREDITS_PER_ANALYSIS;
+  userCredits.textContent = `${credits.toLocaleString()} credits left`;
+  creditPill.classList.toggle('is-empty', credits <= 0);
+
+  if (_guestMode) {
+    guestBanner.classList.toggle('hidden', credits <= 0);
+    guestExhausted.classList.toggle('hidden', credits > 0);
+    if (guestBannerCount) guestBannerCount.textContent = String(credits);
+  } else {
+    guestBanner.classList.add('hidden');
+    guestExhausted.classList.add('hidden');
+  }
+  applyCardLocks(credits <= 0);
+}
+
+async function runGuestLiAnalyze(attempt, source) {
+  _lastLiAttempt = attempt;
+  hideLiResult();
+  setLiAnalyzeState(true, source);
+
+  const resolved = attempt.action === 'ANALYZE_COMPANY'
+    ? await chrome.runtime.sendMessage({
+        action: 'RESOLVE_LINKEDIN_WEBSITE',
+        tabId: attempt.tabId,
+        userInputField: attempt.userInputField,
+      })
+    : await chrome.runtime.sendMessage({
+        action: 'RESOLVE_LINKEDIN_WEBSITE_URL',
+        linkedinUrl: attempt.linkedinUrl,
+        userInputField: attempt.userInputField,
+      });
+
+  if (!resolved?.success || !resolved.websiteUrl) {
+    setLiAnalyzeState(false, source);
+    showLiResult(
+      'error',
+      resolved?.error || 'Could not find a website on this LinkedIn page. Paste the website URL in the Website tab.',
+    );
+    return;
+  }
+
+  await runGuestWebsite(resolved.websiteUrl, 'li', source);
+}
+
+async function runGuestWebAnalyze(attempt, source) {
+  if (!attempt?.websiteUrl) {
+    showWebResult('error', 'No website URL found.');
+    return;
+  }
+  _lastWebAttempt = attempt;
+  hideWebResult();
+  setWebAnalyzeState(true, source);
+  await runGuestWebsite(attempt.websiteUrl, 'web', source);
+}
+
+async function runGuestWebsite(url, kind, source) {
+  const submit = await submitGuestAnalyze(url);
+  if (submit.quota) applyGuestState(submit.quota);
+
+  if (!submit.ok) {
+    if (kind === 'web') {
+      setWebAnalyzeState(false, source);
+      showWebResult('error', submit.error || 'Analysis failed.');
+    } else {
+      setLiAnalyzeState(false, source);
+      showLiResult('error', submit.error || 'Analysis failed.');
+    }
+    return;
+  }
+
+  const polled = submit.jobId ? await pollGuestResults([submit.jobId]) : null;
+  if (polled?.quota) applyGuestState(polled.quota);
+  const result = polled?.results?.[0];
+  const text = result?.status === 'done'
+    ? `Analysis complete${result.companyName ? `: ${result.companyName}` : ''}${result.industry ? ` · ${result.industry}` : ''}. Sign up to save it and view the full report.`
+    : 'Analysis queued. Sign up to save it and view the full report.';
+
+  if (kind === 'web') {
+    setWebAnalyzeState(false, source);
+    showWebResult('success', text, null);
+  } else {
+    setLiAnalyzeState(false, source);
+    showLiResult('success', text, null);
+    _lastLiAttempt = null;
   }
 }
 
@@ -530,7 +711,11 @@ async function handleLiAnalyze(overrideUrl) {
  */
 async function runLiAnalyze(attempt, source) {
   const auth = await getStoredAuth();
-  if (!auth?.token) { syncAuthOverlay(); return; }
+  if (!auth?.token) {
+    if (_guestMode) return runGuestLiAnalyze(attempt, source);
+    syncAuthOverlay();
+    return;
+  }
 
   _lastLiAttempt = attempt;
   hideLiResult();
@@ -700,7 +885,11 @@ async function handleWebAnalyze(overrideUrl) {
  */
 async function runWebAnalyze(attempt, source) {
   const auth = await getStoredAuth();
-  if (!auth?.token) { syncAuthOverlay(); return; }
+  if (!auth?.token) {
+    if (_guestMode) return runGuestWebAnalyze(attempt, source);
+    syncAuthOverlay();
+    return;
+  }
 
   _lastWebAttempt = attempt;
   hideWebResult();
@@ -754,7 +943,11 @@ function hideWebResult() {
 
 function updateCreditsDisplay(credits) {
   if (credits == null) return;
-  userCredits.textContent = `${credits} cr`;
+  const n = Number(credits) || 0;
+  userCredits.textContent = `${n.toLocaleString()} credits left`;
+  creditPill.classList.toggle('is-empty', n <= 0);
+  if (_guestMode) applyGuestState({ ...(_guestQuota || {}), remaining: n });
+  else applyCardLocks(n <= 0);
   updateStoredCredits(credits);
 }
 
@@ -878,6 +1071,16 @@ async function zilvoGet(path) {
 
 async function loadLists({ force = false } = {}) {
   if (_lists.length && !force) return;
+
+  if (_guestMode) {
+    $('lists-loading').classList.add('hidden');
+    $('lists-error').classList.add('hidden');
+    $('lists-items').classList.add('hidden');
+    const empty = $('lists-empty');
+    empty.classList.remove('hidden');
+    empty.textContent = 'Sign in to analyze an extracted list — guest access covers website and LinkedIn analyses.';
+    return;
+  }
 
   $('lists-loading').classList.remove('hidden');
   $('lists-empty').classList.add('hidden');
@@ -1798,7 +2001,9 @@ async function handleBulkAnalyze(scope = 'website') {
   if (_bulkRunning) return;
 
   const auth = await getStoredAuth();
-  if (!auth?.token) { syncAuthOverlay(); return; }
+  // Guests can bulk-analyze WEBSITE lists (public guest bulk endpoint); a
+  // LinkedIn company list needs an account to resolve each company's website.
+  if (!auth?.token && !(_guestMode && scope === 'website')) { syncAuthOverlay(); return; }
 
   // One screen, one list: the LinkedIn card sends LinkedIn URLs only and the
   // bulk screen sends website URLs only, even if both CSVs are loaded.
@@ -1808,7 +2013,7 @@ async function handleBulkAnalyze(scope = 'website') {
 
   if (scope === 'website') {
     // One request, sent by the background worker: closing the popup cannot drop rows.
-    const res = await requestAnalyze({ action: 'START_BULK_WEBSITE', urls: sourceUrls, fileName: _bulkWebFileName, token: auth.token });
+    const res = await requestAnalyze({ action: 'START_BULK_WEBSITE', urls: sourceUrls, fileName: _bulkWebFileName, token: auth?.token || '', guest: !auth?.token });
     if (!res.success) { $('web-csv-error').textContent = analyzeErrorText(res); return; }
     _bulkScope = 'website';
     $('bulk-batch-note').classList.add('hidden');
@@ -1846,10 +2051,10 @@ async function handleBulkAnalyze(scope = 'website') {
  */
 async function handleBulkRetry() {
   const auth = await getStoredAuth();
-  if (!auth?.token) { syncAuthOverlay(); return; }
+  if (!auth?.token && !_guestMode) { syncAuthOverlay(); return; }
 
   if (_bulkScope === 'website' && _webBatchShown) {
-    const res = await requestAnalyze({ action: 'START_BULK_WEBSITE', retry: true, token: auth.token });
+    const res = await requestAnalyze({ action: 'START_BULK_WEBSITE', retry: true, token: auth?.token || '', guest: !auth?.token });
     if (!res.success) $('bulk-progress-label').textContent = analyzeErrorText(res);
     return;
   }
@@ -1950,6 +2155,10 @@ async function renderWebBatch() {
   const queued = rows.filter(r => r.kind === 'queued').length;
   const failedRows = rows.filter(r => r.kind === 'failed').length;
   const noteParts = [];
+  if (batch.guestCounts) {
+    const dup = Number(batch.guestCounts.duplicates) || 0;
+    if (dup > 0) noteParts.push(`${dup} duplicate${dup === 1 ? '' : 's'} (no extra credit).`);
+  }
   if (queued > 0) noteParts.push(`${queued} queued, analysis continues in the cloud.`);
   if (failedRows > 0) noteParts.push(`${failedRows} failed.`);
   if (notSent > 0) noteParts.push(`${notSent} not sent.`);

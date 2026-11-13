@@ -68,6 +68,14 @@ export const API = {
   charge:  '/api/credits/charge',
   pricing: '/api/pricing',
   analyze: '/api/company-intelligence/analyze',
+  // No-login guest trial (same endpoints the marketing site's analyzer uses).
+  // Sent with an `X-Guest-Token` header instead of a Bearer token.
+  guestQuota:   '/api/public/company-analyzer/quota',
+  guestAnalyze: '/api/public/company-analyzer/analyze',
+  guestBulk:    '/api/public/company-analyzer/bulk',
+  guestResults: '/api/public/company-analyzer/results',
+  // Import a guest's analyses into the account that just signed in.
+  guestClaim:   '/api/company-intelligence/guest/claim',
   // One request for a whole website list (<= 1000 urls), and per-batch counts.
   analyzeBulk: '/api/company-intelligence/analyze/bulk',
   jobBatches:  '/api/company-intelligence/jobs/batches',
