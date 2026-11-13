@@ -122,7 +122,7 @@
             <span class="guest-banner-icon guest-banner-icon--ok" aria-hidden="true">✓</span>
             <div class="guest-banner-copy">
               <strong>Guest access active</strong>
-              <p>You have <span id="guest-banner-count">50</span> free credits. Sign up anytime to claim 450 additional analysis credits.</p>
+              <p>You have <span id="guest-banner-count">50</span> free credits. Sign up anytime to claim <span id="guest-signup-credits">450</span> additional analysis credits.</p>
             </div>
             <a id="guest-signup-link" class="guest-banner-link" href="#" target="_blank" rel="noopener">Sign up →</a>
           </div>
@@ -133,7 +133,7 @@
             <span class="guest-banner-icon guest-banner-icon--warn" aria-hidden="true">!</span>
             <div class="guest-banner-copy">
               <strong>Guest trial exhausted</strong>
-              <p>You've used all 50 free credits. Sign up now to unlock <strong>450 bonus credits</strong> and resume analyzing.</p>
+              <p>You've used all <span id="guest-total-credits">50</span> free credits. Sign up now to unlock <strong><span id="guest-bonus-credits">450</span> bonus credits</strong> and resume analyzing.</p>
             </div>
           </div>
           <button id="guest-signup-btn" class="guest-cta" type="button">Sign up free</button>
@@ -489,7 +489,7 @@
           </div>
           <div id="web-bulk-form">
           <p class="panel-sub">Upload a CSV containing company website URLs.</p>
-          <p class="hint">One credit per unique website (5 credits each) — duplicates and already-analyzed sites don't use a new credit.</p>
+          <p class="hint">One credit per unique website (<span id="analyze-credit-cost">5</span> credits each) — duplicates and already-analyzed sites don't use a new credit.</p>
 
           <input type="file" id="web-csv-input" accept=".csv,.txt,text/csv,text/plain" class="hidden"/>
           <label for="web-csv-input" class="btn btn-amber btn--file">

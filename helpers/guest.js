@@ -15,7 +15,7 @@
  */
 import { API, apiUrl } from './constants.js';
 
-/** One analysis costs 5 credits (`ci.analyze` in the platform catalog). */
+/** Fallback only — the live value comes from the quota API (`creditCost`). */
 export const CREDITS_PER_ANALYSIS = 5;
 
 const TOKEN_KEY = 'zilvo_guest_token';
@@ -33,7 +33,12 @@ async function persist(payload) {
     patch[TOKEN_KEY] = payload.guestToken;
   }
   const quota = quotaOf(payload);
-  if (quota) patch[QUOTA_KEY] = quota;
+  if (quota) {
+    // Merge: a submission response only carries remaining/used, so keep the
+    // cached creditCost/signupCredits instead of wiping them.
+    const { [QUOTA_KEY]: prev } = await chrome.storage.local.get(QUOTA_KEY);
+    patch[QUOTA_KEY] = { ...(prev || {}), ...quota };
+  }
   if (Object.keys(patch).length) await chrome.storage.local.set(patch);
 }
 
@@ -41,11 +46,15 @@ function quotaOf(data) {
   if (!data) return null;
   const source = data.quota && Number.isFinite(Number(data.quota.remaining)) ? data.quota : data;
   if (!Number.isFinite(Number(source.remaining))) return null;
+  const creditCost = Number(source.creditCost);
+  const signupCredits = Number(source.signupCredits);
   return {
     limit: Number(source.limit) || 50,
     used: Number(source.used) || 0,
     remaining: Number(source.remaining) || 0,
     requiresLogin: !!source.requiresLogin,
+    ...(Number.isFinite(creditCost) && creditCost > 0 ? { creditCost } : {}),
+    ...(Number.isFinite(signupCredits) && signupCredits > 0 ? { signupCredits } : {}),
   };
 }
 
